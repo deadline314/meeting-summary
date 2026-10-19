@@ -241,6 +241,7 @@
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .anim-pop[data-state='open'], .anim-pop[data-state='delayed-open'], .anim-pop[data-state='instant-open'] { animation: pop-in 160ms var(--ease-out-soft); }
 .anim-pop[data-state='closed'] { animation: pop-out 110ms ease-in; }
+.anim-page { animation: rise 160ms var(--ease-out-soft); }
 .anim-fade[data-state='open'] { animation: fade-in 180ms ease-out; }
 .anim-fade[data-state='closed'] { animation: fade-out 140ms ease-in; }
 .anim-sheet[data-state='open'] { animation: sheet-in 240ms var(--ease-out-soft); }

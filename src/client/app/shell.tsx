@@ -171,17 +171,12 @@ export function AppShell() {
         </AnimatePresence>
 
         <main className="min-w-0 flex-1 pb-24 md:pb-0">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={section}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
+          {/* Pure-CSS enter fade, re-run per section. Unlike the previous exit animation
+              (AnimatePresence mode="wait"), content is mounted immediately and visible by default,
+              so a stalled animation can never leave the page blank. */}
+          <div key={section} className="anim-page">
+            <Outlet />
+          </div>
         </main>
 
         {/* Mobile bottom nav */}
