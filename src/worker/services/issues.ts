@@ -1,12 +1,13 @@
 import { and, asc, desc, eq, gt, inArray, isNull, like, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { Ctx } from '../context'
 import { isAdmin, requireScope } from '../context'
-import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, files, idempotency, issueSubscriptions, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, notes, projects, references } from '../db/schema'
+import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, files, idempotency, issueSubscriptions, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, projects, references } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { AppError, badRequest, conflict, notFound } from '../lib/errors'
 import { activity } from './activity'
 import { limits, parentChecks, usedBytes } from './files'
 import { mentionedUserIds, notify } from './notify'
+import { notesMentioning } from './notes'
 import { access, need, requireActive, userCanSee, visibleProjectIds, type Access, type Project } from './projects'
 
 export type Issue = typeof issues.$inferSelect
@@ -267,16 +268,7 @@ export async function issueDetail(ctx: Ctx, ref: string) {
   const children = await ctx.db.select().from(issues).where(and(eq(issues.parentId, issue.id), isNull(issues.deletedAt))).orderBy(asc(issues.sortOrder)).all()
   // Meeting notes are matched on their stored text; comments use the references table.
   const issueRef = refOf(project, issue)
-  const notesMentioning = await ctx.db
-    .select({ id: notes.id, title: notes.title, startsAt: notes.startsAt, visibility: notes.visibility, projectId: notes.projectId })
-    .from(notes)
-    .where(and(isNull(notes.deletedAt), like(notes.content, `%#[issue:${issueRef}]%`)))
-    .orderBy(desc(notes.startsAt))
-    .limit(20)
-    .all()
-  const mentionedIn = notesMentioning
-    .filter((n) => n.visibility === 'site' || !n.projectId || visible.has(n.projectId))
-    .map(({ id, title, startsAt }) => ({ id, title, startsAt }))
+  const mentionedIn = await notesMentioning(ctx, `#[issue:${issueRef}]`)
   const sub = await ctx.db.select().from(issueSubscriptions).where(and(eq(issueSubscriptions.issueId, issue.id), eq(issueSubscriptions.userId, ctx.user.id))).get()
   return {
     subscribed: !!sub,

@@ -1,5 +1,6 @@
+import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BarChart3, CalendarClock, ChevronDown, Code2, Download, FileUp, ListChecks, Settings2, Trophy, Upload, Users, XCircle, CheckCircle2 } from 'lucide-react'
+import { BarChart3, CalendarClock, ChevronDown, Code2, Download, FileUp, ListChecks, Settings2, Trophy, Upload, Users, XCircle, CheckCircle2, FileText } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useRef, useState, type DragEvent } from 'react'
 import { api } from '../../lib/api'
@@ -76,11 +77,29 @@ export function TaskPage({ id, tab, onTab }: { id: string; tab?: TaskTab; onTab(
 }
 
 function Overview({ task }: { task: Task }) {
-  const { t } = useI18n()
+  const { t, fmt } = useI18n()
+  const mentions = useQuery({
+    queryKey: ['task', task.id, 'mentions'],
+    queryFn: async () => (await api<{ mentionedIn: { id: string; title: string; startsAt: number }[] }>(`/api/tasks/${task.id}`)).mentionedIn,
+  })
   return (
-    <Card className="p-5 md:p-7">
-      {task.description.trim() ? <Html html={renderMarkdown(task.description)} className="prose-md" /> : <EmptyState title={t('common.none')} />}
-    </Card>
+    <div className="flex flex-col gap-4">
+      <Card className="p-5 md:p-7">
+        {task.description.trim() ? <Html html={renderMarkdown(task.description)} className="prose-md" /> : <EmptyState title={t('common.none')} />}
+      </Card>
+      {!!mentions.data?.length && (
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">{t('tasks.mentionedIn')}</h2>
+          {mentions.data.map((n) => (
+            <Link key={n.id} to={`/notes/${n.id}`} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-2">
+              <FileText className="size-4 text-fg-4" />
+              <span className="flex-1 truncate">{n.title}</span>
+              <span className="text-xs text-fg-4">{fmt.date(n.startsAt)}</span>
+            </Link>
+          ))}
+        </Card>
+      )}
+    </div>
   )
 }
 

@@ -21,6 +21,7 @@ import { driveName, iconFor, useFiles } from '../files/files-panel'
 import { compressImage, fileUrl, uploadFile } from '../../lib/upload'
 import { confirm } from '../../ui/dialog'
 import { Composer } from '../notes/comments'
+import { annotateImage } from '../files/annotate'
 import { Html } from '../notes/preview'
 import { markEntityRead, useUnreadIssues } from '../../app/notifications'
 import { openDuplicate } from './duplicate-issue'
@@ -184,7 +185,7 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
             </section>
           )}
           <hr className="border-line" />
-          <Timeline issueRef={i.ref} editable={canWrite(i.role)} />
+          <Timeline issueRef={i.ref} issueId={i.id} editable={canWrite(i.role)} memberIds={project.data?.members.map((m) => m.userId)} />
         </div>
         <aside className="flex flex-col gap-5 lg:sticky lg:top-5 lg:self-start lg:border-l lg:border-line lg:pl-5">
           {!mobile && <Properties issue={i} editable={editable} labels={labels.data ?? []} memberIds={project.data?.members.map((m) => m.userId)} onSave={save} />}
@@ -293,6 +294,12 @@ function Description({ issue, editable, onSave, onToggled }: { issue: IssueRow; 
   )
 }
 
+const withAnnotation = async (list: File[]) => {
+  const out: File[] = []
+  for (const f of list) out.push(await annotateImage(f))
+  return out
+}
+
 type FileRow = { id: string; name: string; mime: string; size: number; kind: 'image' | 'file' | 'drive'; ownerId: string; createdAt: number; driveUrl: string | null }
 
 /**
@@ -328,6 +335,24 @@ function IssueBody({ d, editable }: { d: Detail; editable: boolean }) {
     }
   }
   const items = (files.data ?? []) as FileRow[]
+  // Pasting files anywhere on the page (outside text fields) attaches them; images open the annotator first.
+  const uploadRef = useRef(upload)
+  useEffect(() => {
+    uploadRef.current = upload
+  })
+  useEffect(() => {
+    if (!editable) return
+    const on = (e: ClipboardEvent) => {
+      const el = e.target as HTMLElement
+      if (el.closest('input, textarea, [contenteditable="true"]')) return
+      const list = [...(e.clipboardData?.files ?? [])]
+      if (!list.length) return
+      e.preventDefault()
+      withAnnotation(list).then((f) => uploadRef.current(f))
+    }
+    document.addEventListener('paste', on)
+    return () => document.removeEventListener('paste', on)
+  }, [editable])
 
   return (
     <div
@@ -342,7 +367,7 @@ function IssueBody({ d, editable }: { d: Detail; editable: boolean }) {
         if (!editable) return
         e.preventDefault()
         setOver(false)
-        upload([...e.dataTransfer.files])
+        withAnnotation([...e.dataTransfer.files]).then(upload)
       }}
     >
       {editable && (
@@ -666,12 +691,14 @@ type TimelineItem =
   | { kind: 'comment'; at: number; comment: { id: string; parentId: string | null; authorId: string; body: string; createdAt: number; editedAt: number | null; deletedAt: number | null; version: number } }
   | { kind: 'change'; at: number; change: { id: string; actorId: string | null; action: string; data: Record<string, unknown>; source: string; createdAt: number } }
 
-function Timeline({ issueRef, editable }: { issueRef: string; editable: boolean }) {
+function Timeline({ issueRef, issueId, editable, memberIds }: { issueRef: string; issueId: string; editable: boolean; memberIds?: string[] }) {
   const { t, fmt } = useI18n()
   const me = useMe()
   const qc = useQueryClient()
   const [kind, setKind] = useState<'all' | 'comments' | 'changes'>('all')
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
+  const [replyTo, setReplyTo] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const q = useInfiniteQuery({
     queryKey: ['issue-timeline', issueRef, kind, order],
     queryFn: ({ pageParam }) => api<{ items: TimelineItem[]; next: number | null }>(`/api/issues/${issueRef}/timeline?kind=${kind}&order=${order}${pageParam ? `&before=${pageParam}` : ''}`),
@@ -728,14 +755,57 @@ function Timeline({ issueRef, editable }: { issueRef: string; editable: boolean 
                   <span className="text-fg-4">{fmt.relative(it.comment.createdAt)}</span>
                   {it.comment.editedAt && <span className="text-fg-4">（{t('common.edited')}）</span>}
                   <div className="flex-1" />
-                  {it.comment.authorId === me.id && !it.comment.deletedAt && (
-                    <button className="text-fg-4 hover:text-danger" onClick={() => api(`/api/issues/${issueRef}/comments/${it.comment.id}`, { method: 'DELETE' }).then(refresh, (e) => toastError(e))}>
-                      {t('common.delete')}
+                  {editable && !it.comment.parentId && !it.comment.deletedAt && (
+                    <button className="min-h-8 px-1 text-fg-4 hover:text-fg-2" onClick={() => setReplyTo(it.comment.id)}>
+                      {t('comments.reply')}
                     </button>
                   )}
+                  {it.comment.authorId === me.id && !it.comment.deletedAt && (
+                    <>
+                      <button className="min-h-8 px-1 text-fg-4 hover:text-fg-2" onClick={() => setEditingId(it.comment.id)}>
+                        {t('comments.edit')}
+                      </button>
+                      <button className="min-h-8 px-1 text-fg-4 hover:text-danger" onClick={() => api(`/api/issues/${issueRef}/comments/${it.comment.id}`, { method: 'DELETE' }).then(refresh, (e) => toastError(e))}>
+                        {t('common.delete')}
+                      </button>
+                    </>
+                  )}
                 </div>
-                {it.comment.deletedAt ? <div className="text-xs text-fg-4 italic">{t('comments.deleted')}</div> : <Html html={renderMarkdown(it.comment.body)} className="prose-md text-sm" />}
+                {it.comment.deletedAt ? (
+                  <div className="text-xs text-fg-4 italic">{t('comments.deleted')}</div>
+                ) : editingId === it.comment.id ? (
+                  <Composer
+                    autoFocus
+                    initial={it.comment.body}
+                    userIds={memberIds}
+                    upload={{ parentType: 'issue', parentId: issueId }}
+                    onCancel={() => setEditingId(null)}
+                    onSend={async (body) => {
+                      await api(`/api/issues/${issueRef}/comments/${it.comment.id}`, { method: 'PATCH', body: { body, version: it.comment.version } })
+                      setEditingId(null)
+                      refresh()
+                    }}
+                  />
+                ) : (
+                  <Html html={renderMarkdown(it.comment.body)} className="prose-md text-sm" />
+                )}
               </Card>
+              {replyTo === it.comment.id && (
+                <div className="mt-2 ml-8">
+                  <Composer
+                    autoFocus
+                    placeholder={t('comments.replyPh')}
+                    userIds={memberIds}
+                    upload={{ parentType: 'issue', parentId: issueId }}
+                    onCancel={() => setReplyTo(null)}
+                    onSend={async (body) => {
+                      await api(`/api/issues/${issueRef}/comments`, { method: 'POST', body: { body, parentId: it.comment.id, operationId: crypto.randomUUID() } })
+                      setReplyTo(null)
+                      refresh()
+                    }}
+                  />
+                </div>
+              )}
             </li>
           ),
         )}
@@ -750,6 +820,8 @@ function Timeline({ issueRef, editable }: { issueRef: string; editable: boolean 
         <div className="mt-4">
           <Composer
             placeholder={t('issue.commentPh')}
+            userIds={memberIds}
+            upload={{ parentType: 'issue', parentId: issueId }}
             onSend={async (body) => {
               await api(`/api/issues/${issueRef}/comments`, { method: 'POST', body: { body, operationId: crypto.randomUUID() } })
               refresh()

@@ -10,6 +10,19 @@ import { visibleProjectIds } from './projects'
 
 export type Note = typeof notes.$inferSelect
 
+/** Notes whose text contains `token` (e.g. `#[task:id]`), newest first, only those the caller can see. */
+export async function notesMentioning(ctx: Ctx, token: string) {
+  const visible = new Set(await visibleProjectIds(ctx))
+  const rows = await ctx.db
+    .select({ id: notes.id, title: notes.title, startsAt: notes.startsAt, visibility: notes.visibility, projectId: notes.projectId })
+    .from(notes)
+    .where(and(isNull(notes.deletedAt), like(notes.content, `%${token}%`)))
+    .orderBy(desc(notes.startsAt))
+    .limit(20)
+    .all()
+  return rows.filter((n) => n.visibility === 'site' || !n.projectId || visible.has(n.projectId) || isAdmin(ctx.user)).map(({ id, title, startsAt }) => ({ id, title, startsAt }))
+}
+
 export type NoteInput = {
   title: string
   startsAt: number

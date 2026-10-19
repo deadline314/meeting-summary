@@ -4,6 +4,7 @@ import type { AppEnv } from '../context'
 import { body, ctxOf, parse } from '../context'
 import { badRequest } from '../lib/errors'
 import { authenticateRunner, claim, jobFile, submitResult } from '../services/grader'
+import { notesMentioning } from '../services/notes'
 import { bestOf, createTask, getTask, leaderboard, listSubmissions, listTasks, submit, taskDto, taskOverview, updateTask } from '../services/tasks'
 import { refResolvers, slices } from './home'
 import { and, eq } from 'drizzle-orm'
@@ -41,7 +42,8 @@ taskRoutes.post('/tasks', async (c) => {
 
 taskRoutes.get('/tasks/:id', async (c) => {
   const ctx = ctxOf(c)
-  return c.json({ task: taskDto(ctx, await getTask(ctx, c.req.param('id'))) })
+  const task = await getTask(ctx, c.req.param('id'))
+  return c.json({ task: taskDto(ctx, task), mentionedIn: await notesMentioning(ctx, `#[task:${task.id}]`) })
 })
 
 taskRoutes.patch('/tasks/:id', async (c) => {

@@ -16,6 +16,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { SITE_ICONS } from '../features/admin/site-settings'
+import { AnnotateHost } from '../features/files/annotate'
 import { api } from '../lib/api'
 import { useOnline } from '../lib/hooks'
 import { useT, type MsgKey } from '../lib/i18n'
@@ -74,6 +75,7 @@ export function AppShell() {
     <div className="flex min-h-dvh bg-canvas">
       <PrefsSync />
       <CommandPalette />
+      <AnnotateHost />
       <ShortcutHelp />
       {/* Desktop sidebar */}
       <motion.aside

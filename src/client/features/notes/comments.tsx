@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, MessageSquare, MoreHorizontal, Pencil, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { useI18n } from '../../lib/i18n'
 import { renderMarkdown } from '../../lib/markdown'
@@ -11,10 +11,13 @@ import { Button, IconButton } from '../../ui/button'
 import { cx } from '../../ui/cx'
 import { confirm } from '../../ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../../ui/menu'
-import { EmptyState } from '../../ui/misc'
+import { EmptyState, Spinner } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
 import { toastError } from '../../ui/toast'
+import { annotateImage } from '../files/annotate'
+import { compressImage, fileUrl, uploadFile } from '../../lib/upload'
 import { Html } from './preview'
+import { RefSuggestList, useRefSuggest } from './ref-suggest'
 
 export type NoteComment = {
   id: string
@@ -83,6 +86,7 @@ export function CommentsPanel({
               <Quote text={draft.quote} />
               <Composer
                 autoFocus
+                upload={{ parentType: 'note', parentId: noteId }}
                 placeholder={t('comments.placeholder')}
                 onCancel={onDraftDone}
                 onSend={async (body) => {
@@ -163,6 +167,7 @@ function ThreadCard({ th, noteId, active, onActivate, refresh }: { th: Thread; n
         <div className="mt-2" onClick={(e) => e.stopPropagation()}>
           <Composer
             autoFocus
+            upload={{ parentType: 'note', parentId: noteId }}
             placeholder={t('comments.replyPh')}
             onCancel={() => setReplying(false)}
             onSend={async (body) => {
@@ -244,17 +249,25 @@ export function Composer({
   placeholder,
   initial = '',
   autoFocus,
+  userIds,
+  upload,
 }: {
   onSend(body: string): Promise<unknown>
   onCancel?(): void
   placeholder?: string
   initial?: string
   autoFocus?: boolean
+  /** Limit @-suggestions to these people (e.g. the issue's project members). */
+  userIds?: string[]
+  /** Where pasted images are stored; without it pasting images is plain text. */
+  upload?: { parentType: 'note' | 'issue'; parentId: string }
 }) {
   const { t } = useI18n()
   const [v, setV] = useState(initial)
   const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(0)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const s = useRefSuggest(userIds)
   useEffect(() => {
     const el = ref.current
     if (!el) return
@@ -262,7 +275,7 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
   }, [v])
   const send = async () => {
-    if (!v.trim() || busy) return
+    if (!v.trim() || busy || uploading) return
     setBusy(true)
     try {
       await onSend(v.trim())
@@ -273,33 +286,97 @@ export function Composer({
       setBusy(false)
     }
   }
+  // The caret to restore right after React writes a programmatic change, before the next keystroke.
+  const caret = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    if (caret.current === null || !ref.current) return
+    ref.current.focus()
+    ref.current.setSelectionRange(caret.current, caret.current)
+    caret.current = null
+  })
+  const insertAtCaret = (text: string) => {
+    const el = ref.current
+    const at = el?.selectionStart ?? v.length
+    caret.current = at + text.length
+    setV((cur) => cur.slice(0, at) + text + cur.slice(el?.selectionEnd ?? at))
+  }
+  const pick = (insert: string) => {
+    const r = s.pick(v, ref.current!.selectionStart, insert)
+    caret.current = r.caret
+    setV(r.value)
+  }
+  const pasteImages = async (files: File[]) => {
+    for (const raw of files) {
+      setUploading((n) => n + 1)
+      try {
+        const f = await uploadFile(await compressImage(await annotateImage(raw)), upload!)
+        insertAtCaret(`![${f.name}](${fileUrl(f.id)})\n`)
+      } catch (err) {
+        toastError(err)
+      } finally {
+        setUploading((n) => n - 1)
+      }
+    }
+  }
   return (
     <div className="flex flex-col gap-2">
-      <textarea
-        ref={ref}
-        autoFocus={autoFocus}
-        value={v}
-        rows={2}
-        placeholder={placeholder}
-        onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      <div className="relative">
+        <RefSuggestList s={s} onPick={pick} />
+        <textarea
+          ref={ref}
+          autoFocus={autoFocus}
+          value={v}
+          rows={2}
+          placeholder={placeholder}
+          onChange={(e) => {
+            setV(e.target.value)
+            s.update(e.target.value, e.target.selectionStart)
+          }}
+          onClick={(e) => s.update(v, e.currentTarget.selectionStart)}
+          onBlur={() => s.close()}
+          onPaste={(e) => {
+            const imgs = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
+            if (!upload || !imgs.length) return
             e.preventDefault()
-            send()
-          } else if (e.key === 'Escape' && onCancel) {
-            e.stopPropagation()
-            onCancel()
-          }
-        }}
-        className="w-full resize-none overflow-y-auto rounded-xl border border-line bg-canvas px-3 py-2 text-sm leading-relaxed focus:border-accent focus:outline-none max-md:text-base"
-      />
-      <div className="flex justify-end gap-2">
+            pasteImages(imgs)
+          }}
+          onKeyDown={(e) => {
+            if (s.open) {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                s.setActive((s.active + (e.key === 'ArrowDown' ? 1 : s.options.length - 1)) % s.options.length)
+                return
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault()
+                pick(s.options[s.active]!.insert)
+                return
+              }
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                s.close()
+                return
+              }
+            }
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault()
+              send()
+            } else if (e.key === 'Escape' && onCancel) {
+              e.stopPropagation()
+              onCancel()
+            }
+          }}
+          className="w-full resize-none overflow-y-auto rounded-xl border border-line bg-canvas px-3 py-2 text-sm leading-relaxed focus:border-accent focus:outline-none max-md:text-base"
+        />
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        {uploading > 0 && <Spinner className="mr-auto size-4" />}
         {onCancel && (
           <Button size="sm" variant="ghost" onClick={onCancel}>
             {t('common.cancel')}
           </Button>
         )}
-        <Button size="sm" variant="primary" icon={<Send className="size-3.5" />} loading={busy} disabled={!v.trim()} onClick={send} title="Ctrl/⌘ + Enter">
+        <Button size="sm" variant="primary" icon={<Send className="size-3.5" />} loading={busy} disabled={!v.trim() || uploading > 0} onClick={send} title="Ctrl/⌘ + Enter">
           {t('comments.send')}
         </Button>
       </div>
