@@ -1,6 +1,6 @@
 # [MS-3] 支援中英文切換
 
-> 狀態：進行中
+> 狀態：完成
 
 ## 內文
 
@@ -16,7 +16,7 @@
 - [x] 日期時間依語系格式化（例如 `2026/10/19（一）14:00` 與 `Mon, Oct 19, 2026 2:00 PM`），相對時間（3 分鐘前／3 min ago）也一樣
 - [x] 兩種語系的字串鍵完全一致，缺字串時建置失敗
 - [x] 伺服器回傳的錯誤訊息、Email 以外的通知文字也依使用者語系顯示
-- [ ] 英文介面下所有頁面沒有文字溢出或截斷（電腦與手機）
+- [x] 英文介面下所有頁面沒有文字溢出或截斷（電腦與手機）
 
 ### 測試流程
 1. 用英文瀏覽器第一次開站，看到英文介面
@@ -57,3 +57,36 @@
 ![切換為英文後的設定頁（電腦・深色）](images/MS-3-english-desktop-dark.png)
 ![切換為英文後的設定頁（手機・淺色）](images/MS-3-english-mobile-light.png)
 ![切換為英文後的設定頁（手機・深色）](images/MS-3-english-mobile-dark.png)
+
+# Commit-2
+
+## 內文
+
+原本沒有檢查英文介面的版面。
+現在以英文介面逐頁檢查首頁、會議紀錄列表與內頁、任務、專案（清單、看板、時間圖、統計、議題頁、時間圖總覽）與設定各 Tab，電腦與手機都沒有任何頁面出現橫向捲動；手機上過長的專案名稱改為換行而不是被切掉。議題標題等使用者內容過長時以「…」截斷屬預期。
+驗收：14 個頁面在 1440 與 390 寬度下 scrollWidth 都不超過視窗寬度。
+
+### 測試結果
+
+| 項目 | 結果 |
+|---|---|
+| 完整測試套件（vitest） | 通過 46 / 46 |
+| E2E（Playwright，4 種裝置×主題） | 通過 92 / 92（4 項僅桌機，手機略過） |
+| 型別檢查 | 0 錯誤 |
+| lint（含色碼與對比度檢查） | 0 錯誤 |
+
+### 截圖
+
+**英文介面：專案**
+
+![英文介面：專案（電腦・淺色）](images/MS-3-english-projects-desktop-light.png)
+![英文介面：專案（電腦・深色）](images/MS-3-english-projects-desktop-dark.png)
+![英文介面：專案（手機・淺色）](images/MS-3-english-projects-mobile-light.png)
+![英文介面：專案（手機・深色）](images/MS-3-english-projects-mobile-dark.png)
+
+**英文介面：通知設定**
+
+![英文介面：通知設定（電腦・淺色）](images/MS-3-english-settings-desktop-light.png)
+![英文介面：通知設定（電腦・深色）](images/MS-3-english-settings-desktop-dark.png)
+![英文介面：通知設定（手機・淺色）](images/MS-3-english-settings-mobile-light.png)
+![英文介面：通知設定（手機・深色）](images/MS-3-english-settings-mobile-dark.png)
