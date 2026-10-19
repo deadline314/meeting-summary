@@ -223,7 +223,7 @@ function History({ subs, loading, higherIsBetter }: { subs?: Submission[]; loadi
       <div className="text-[13px] font-medium text-fg-2">{t('tasks.history')}</div>
       <AnimatePresence initial={false}>
         {subs.map((s, i) => (
-          <motion.div key={s.id} layout initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
+          <motion.div key={s.id} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
             <SubmissionCard s={s} n={subs.length - i} prev={subs[i + 1]} defaultOpen={i === 0} />
           </motion.div>
         ))}

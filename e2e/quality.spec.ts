@@ -128,3 +128,59 @@ test('session runs out mid-comment: sign in again in a small window, the text is
   await page.getByRole('button', { name: '送出' }).click()
   await expect(page.getByText('這段留言還沒送出').first()).toBeVisible()
 })
+
+test('dialogs and tabs animate without dropped frames; nothing blurs what is behind it', async ({ page }, info) => {
+  test.skip(isMobile(info), 'frame timing is measured on desktop')
+  await login(page, `qa-anim-${info.project.name}`, NAMES[info.project.name]!)
+  const key = `QA${info.project.name.endsWith('light') ? 'L' : 'K'}N`
+  await page.request.post('/api/projects', { data: { key, name: 'Animation' } })
+  await Promise.all(Array.from({ length: 40 }, (_, i) => page.request.post(`/api/projects/${key}/issues`, { data: { title: `議題 ${i + 1}` } })))
+  await page.goto(`/projects/${key}`)
+  await expect(page.locator('[data-ref]').first()).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  // Frame gaps while an action animates. The first frame carries the mount itself; every frame
+  // after it is the animation and must keep up (≤ 34 ms, i.e. no worse than 30 fps).
+  const gaps = (js: string) =>
+    page.evaluate(async (code) => {
+      const out: number[] = []
+      let last = performance.now()
+      const t0 = last
+      const done = new Promise<void>((res) => {
+        const tick = (t: number) => {
+          out.push(t - last)
+          last = t
+          if (t - t0 < 500) requestAnimationFrame(tick)
+          else res()
+        }
+        requestAnimationFrame(tick)
+      })
+      new Function(code)()
+      await done
+      return out.slice(2)
+    }, js)
+  const open = await gaps(`document.querySelector('button[aria-label="專案設定"]').click()`)
+  await expect(page.getByRole('dialog')).toBeVisible()
+  const overlay = await page.evaluate(() => Array.from(document.querySelectorAll('*')).filter((el) => getComputedStyle(el).backdropFilter !== 'none').map((el) => el.className))
+  expect(overlay).toEqual([])
+  const tab = await gaps(`[...document.querySelectorAll('[role=dialog] [role=tab]')].find((e) => e.textContent.trim() === '成員').click()`)
+  const close = await gaps(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  for (const [name, f] of Object.entries({ open, tab, close })) expect(Math.max(...f), name).toBeLessThanOrEqual(34)
+})
+
+test('indicators still show the current page, tab and view after dropping the layout animations', async ({ page }, info) => {
+  await login(page, `qa-ind-${info.project.name}`, NAMES[info.project.name]!)
+  const key = `QI${info.project.name.startsWith('desk') ? 'D' : 'M'}${info.project.name.endsWith('light') ? 'L' : 'K'}`
+  await page.request.post('/api/projects', { data: { key, name: 'Indicators' } })
+  await Promise.all(['整理資料', '訓練模型', '寫報告'].map((title) => page.request.post(`/api/projects/${key}/issues`, { data: { title } })))
+  await page.goto(`/projects/${key}?view=board`)
+  await expect(page.getByText('訓練模型')).toBeVisible()
+  await expect(page.getByRole('button', { name: '看板' })).toHaveAttribute('aria-pressed', 'true')
+  await shot(page, info, 'MS-53', 'board')
+  await page.goto(`/projects/${key}?settings=members`)
+  await expect(page.getByRole('tab', { name: '成員', selected: true })).toBeVisible()
+  await shot(page, info, 'MS-53', 'tabs')
+  await page.goto('/notes')
+  await page.getByRole('button', { name: '新增' }).first().click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await shot(page, info, 'MS-53', 'note-dialog')
+})

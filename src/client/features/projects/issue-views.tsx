@@ -143,9 +143,11 @@ export function ViewProvider({ scope: scopeProp, role, labels, memberIds: member
   )
   return (
     <ViewCtx.Provider value={value}>
-      <Keyboard />
-      {children}
-      <SelectionBar />
+      <RowMetaProvider>
+        <Keyboard />
+        {children}
+        <SelectionBar />
+      </RowMetaProvider>
     </ViewCtx.Provider>
   )
 }
@@ -305,7 +307,7 @@ function Group({ status, filters, total, collapsed, onToggle }: { status: Status
   const loaded = rows.length
   return (
     <section>
-      <div className="sticky top-0 z-10 flex h-10 items-center gap-2 border-b border-line bg-surface-2/95 px-4 backdrop-blur max-md:top-14">
+      <div className="sticky top-0 z-10 flex h-10 items-center gap-2 border-b border-line bg-surface-2 px-4 max-md:top-14">
         <button onClick={onToggle} className="flex items-center gap-2 text-[13px] font-semibold" aria-expanded={!collapsed}>
           {collapsed ? <ChevronRight className="size-4 text-fg-4" /> : <ChevronDown className="size-4 text-fg-4" />}
           <IssueStatusIcon status={status} />
@@ -394,7 +396,7 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
           <UnreadDot id={issue.id} />
           <span className="truncate">{issue.title}</span>
           <BlockBadges issue={issue} />
-          <StaleBadge issue={issue} />
+          <RowStale issue={issue} />
           {issue.subProgress && (
             <span className="shrink-0 rounded bg-surface-2 px-1 text-[11px] text-fg-4">
               {issue.subProgress.done}/{issue.subProgress.total}
@@ -416,19 +418,46 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
   )
 })
 
+// Per-row facts every row needs: read once for the whole list instead of one subscription
+// and one timer per row (that made mounting a 50-card column noticeably slow).
+type RowMeta = { unread: Set<string>; staleDays: Map<string, number>; now: number }
+const RowMetaCtx = createContext<RowMeta>({ unread: new Set(), staleDays: new Map(), now: Date.now() })
+
+function RowMetaProvider({ children }: { children: ReactNode }) {
+  const unread = useUnreadIssues()
+  const unreadKey = [...unread].join()
+  const projects = useProjects().data
+  const now = useNow(60_000)
+  const value = useMemo<RowMeta>(
+    () => ({ unread, staleDays: new Map((projects ?? []).map((p) => [p.key, p.staleDays])), now }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [unreadKey, projects, now],
+  )
+  return <RowMetaCtx.Provider value={value}>{children}</RowMetaCtx.Provider>
+}
+
 function UnreadDot({ id }: { id: string }) {
   const { t } = useI18n()
-  const unread = useUnreadIssues()
+  const { unread } = useContext(RowMetaCtx)
   if (!unread.has(id)) return null
   return <span role="img" aria-label={t('notice.unread')} className="size-2 shrink-0 rounded-full bg-danger" />
 }
 
 /** ⏰ when an unfinished issue has sat in one status longer than the project's threshold. */
 export function StaleBadge({ issue, withText }: { issue: Pick<IssueRow, 'status' | 'statusChangedAt' | 'projectKey'>; withText?: boolean }) {
-  const { t, fmt } = useI18n()
   const projects = useProjects()
   const now = useNow(60_000)
-  const limit = projects.data?.find((p) => p.key === issue.projectKey)?.staleDays ?? 7
+  return <StaleView issue={issue} withText={withText} now={now} limit={projects.data?.find((p) => p.key === issue.projectKey)?.staleDays ?? 7} />
+}
+
+/** Same badge inside list rows and cards, fed by the list-wide RowMeta. */
+function RowStale({ issue }: { issue: IssueRow }) {
+  const { staleDays, now } = useContext(RowMetaCtx)
+  return <StaleView issue={issue} now={now} limit={staleDays.get(issue.projectKey) ?? 7} />
+}
+
+function StaleView({ issue, withText, now, limit }: { issue: Pick<IssueRow, 'status' | 'statusChangedAt'>; withText?: boolean; now: number; limit: number }) {
+  const { t, fmt } = useI18n()
   const days = Math.floor((now - issue.statusChangedAt) / 86400_000)
   if (isDone(issue.status) || days < limit) return null
   const text = t('issue.stale', { status: t(`status.${issue.status}` as MsgKey), days })
@@ -854,7 +883,7 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
   )
 }
 
-const DropLine = () => <motion.div layoutId="drop-line" className="my-1 h-0.5 rounded-full bg-accent" />
+const DropLine = () => <div className="anim-rise my-1 h-0.5 rounded-full bg-accent" />
 
 /** Status column under a point (touch drag), highlighted while hovered. */
 function columnAt(x: number, y: number) {
@@ -900,9 +929,8 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
   }
   return (
     <IssueContextMenu issue={issue}>
-      <motion.div
+      <div
         ref={el}
-        layout
         data-ref={issue.ref}
         draggable={draggable}
         onPointerDown={(e) => {
@@ -932,9 +960,8 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
         onPointerUp={(e) => endPress(e.clientX, e.clientY)}
         onPointerCancel={() => endPress()}
         onDragStart={(e) => {
-          const ev = e as unknown as DragEvent
-          ev.dataTransfer.setData('text/issue', issue.ref)
-          ev.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/issue', issue.ref)
+          e.dataTransfer.effectAllowed = 'move'
           setDragging(true)
         }}
         onDragEnd={() => setDragging(false)}
@@ -961,7 +988,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
           <Prefix issue={issue} />
           <span className="leading-snug">{issue.title}</span>
           <BlockBadges issue={issue} />
-          <StaleBadge issue={issue} />
+          <RowStale issue={issue} />
         </div>
         {issue.labels.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
@@ -970,7 +997,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
             ))}
           </div>
         )}
-      </motion.div>
+      </div>
     </IssueContextMenu>
   )
 }

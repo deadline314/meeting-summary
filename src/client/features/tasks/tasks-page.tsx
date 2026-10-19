@@ -129,7 +129,7 @@ function TaskCard({ task }: { task: Task }) {
     <TaskContextMenu task={task}>
     <Link
       to={`/tasks/${task.id}`}
-      className="group flex h-full flex-col gap-3 rounded-2xl border border-line bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card"
+      className="group flex h-full flex-col gap-3 rounded-2xl border border-line bg-surface p-4 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card"
     >
       <div className="flex items-start gap-2">
         <h3 className="flex-1 font-semibold group-hover:text-accent-text">{task.title}</h3>

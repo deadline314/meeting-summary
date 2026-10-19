@@ -119,7 +119,7 @@ export function FilesPanel({ parentType, parentId, canUpload = true, onDriveLink
             }
             return (
               <FileContextMenu key={f.id} f={f} onOpen={open} onDelete={canDelete ? remove : undefined}>
-              <motion.li key={f.id} layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="group flex items-center gap-2.5 rounded-xl border border-line bg-surface p-2.5">
+              <motion.li key={f.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="group flex items-center gap-2.5 rounded-xl border border-line bg-surface p-2.5">
                 {f.kind === 'image' ? (
                   <img src={fileUrl(f.id)} alt="" className="size-10 shrink-0 rounded-lg border border-line object-cover" loading="lazy" />
                 ) : (

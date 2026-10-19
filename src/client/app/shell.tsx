@@ -85,7 +85,7 @@ export function AppShell() {
       <motion.aside
         animate={{ width: collapsed ? 68 : 232 }}
         transition={{ type: 'spring', stiffness: 400, damping: 40 }}
-        className="sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-line bg-surface/70 backdrop-blur md:flex"
+        className="sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-line bg-surface md:flex"
       >
         <div className="flex h-14 items-center gap-2.5 px-4">
           <Logo />
@@ -122,17 +122,10 @@ export function AppShell() {
                 <Link
                   to={n.to}
                   className={cx(
-                    'relative flex h-9 items-center gap-3 rounded-xl px-2.5 text-sm font-medium transition-colors [&_svg]:size-[18px] [&_svg]:shrink-0',
-                    active ? 'text-fg' : 'text-fg-3 hover:bg-surface-2 hover:text-fg-2',
+                    'relative flex h-9 items-center gap-3 rounded-xl px-2.5 text-sm font-medium transition-colors duration-200 [&_svg]:size-[18px] [&_svg]:shrink-0',
+                    active ? 'bg-accent-soft text-fg' : 'text-fg-3 hover:bg-surface-2 hover:text-fg-2',
                   )}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="nav-active"
-                      className="absolute inset-0 rounded-xl bg-accent-soft"
-                      transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-                    />
-                  )}
                   <span className={cx('relative', active && 'text-accent-text')}>{n.icon}</span>
                   {!collapsed && <span className="relative truncate">{t(n.key)}</span>}
                 </Link>
@@ -156,7 +149,7 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
-        <header className="pt-safe sticky top-0 z-30 flex items-center gap-2 border-b border-line bg-surface/85 px-4 backdrop-blur md:hidden">
+        <header className="pt-safe sticky top-0 z-30 flex items-center gap-2 border-b border-line bg-surface/95 px-4 md:hidden">
           <div className="flex h-14 flex-1 items-center gap-2.5">
             <Logo />
             <span className="text-[15px] font-bold tracking-tight">{siteName}</span>
@@ -191,7 +184,7 @@ export function AppShell() {
         </main>
 
         {/* Mobile bottom nav */}
-        <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface/90 backdrop-blur md:hidden">
+        <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface/95 md:hidden">
           {nav.map((n) => {
             const active = isActive(n)
             return (
@@ -203,10 +196,8 @@ export function AppShell() {
                   active ? 'text-accent-text' : 'text-fg-4',
                 )}
               >
-                {active && (
-                  <motion.span layoutId="bottom-active" className="absolute top-0 h-0.5 w-10 rounded-full bg-accent" />
-                )}
-                <motion.span animate={{ scale: active ? 1.08 : 1 }}>{n.icon}</motion.span>
+                <span className={cx('absolute top-0 h-0.5 w-10 rounded-full bg-accent transition-transform duration-200', !active && 'scale-x-0')} aria-hidden />
+                <span className={cx('transition-transform duration-200', active && 'scale-[1.08]')}>{n.icon}</span>
                 {t(n.key)}
               </Link>
             )

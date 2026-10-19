@@ -56,7 +56,7 @@ export function LoginPage({ search }: { search: Search }) {
                 <>
                   <a
                     href={googleHref(false)}
-                    className="group flex items-center gap-3 rounded-xl border border-line p-3 transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-card"
+                    className="group flex items-center gap-3 rounded-xl border border-line p-3 transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-accent hover:shadow-card"
                   >
                     <Avatar id={h.email} name={h.name ?? h.email} src={h.avatarUrl} size="md" />
                     <span className="min-w-0 flex-1 text-left">

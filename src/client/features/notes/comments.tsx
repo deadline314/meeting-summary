@@ -100,7 +100,7 @@ export function CommentsPanel({
             </motion.div>
           )}
           {shown.map((th) => (
-            <motion.div key={th.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }}>
+            <motion.div key={th.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }}>
               <ThreadCard th={th} noteId={noteId} active={th.id === activeId} onActivate={() => onActivate(th.id)} refresh={refresh} />
             </motion.div>
           ))}
@@ -135,7 +135,7 @@ function ThreadCard({ th, noteId, active, onActivate, refresh }: { th: Thread; n
       data-thread={th.id}
       onClick={onActivate}
       className={cx(
-        'cursor-pointer rounded-2xl border bg-surface p-3 transition-all',
+        'cursor-pointer rounded-2xl border bg-surface p-3 transition-[border-color,box-shadow,opacity]',
         active ? 'border-warning shadow-card' : 'border-line hover:border-line-strong',
         !!th.resolvedAt && 'opacity-75',
       )}
