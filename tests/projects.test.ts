@@ -178,4 +178,56 @@ describe('projects & issues', () => {
     expect((await a.call('/api/saved-views', { method: 'POST', body: { name: 'one too many', url: '/projects' } })).status).toBe(422)
     expect((await a.call<{ items: { name: string }[] }>('/api/saved-views')).body.items[0]!.name).toBe('renamed')
   })
+  it('issue templates: personal beats project beats global; scopes guard who edits', async () => {
+    const { a, k } = await setup()
+    const owner = await login('teacher@example.com')
+    const g = (await owner.call<{ template: { id: string } }>('/api/issue-templates', { method: 'POST', body: { scope: 'global', name: 'G', body: 'global body', isDefault: true } })).body.template
+    expect((await a.call('/api/issue-templates', { method: 'POST', body: { scope: 'global', name: 'nope', body: 'x' } })).status).toBe(404)
+    let r = (await a.call<{ items: { name: string }[]; defaultId: string }>(`/api/issue-templates?key=${k}`)).body
+    expect(r.defaultId).toBe(g.id)
+    const p = (await a.call<{ template: { id: string } }>('/api/issue-templates', { method: 'POST', body: { scope: 'project', key: k, name: 'P', body: 'project body', isDefault: true } })).body.template
+    expect((await a.call<{ defaultId: string }>(`/api/issue-templates?key=${k}`)).body.defaultId).toBe(p.id)
+    const u = (await a.call<{ template: { id: string } }>('/api/issue-templates', { method: 'POST', body: { scope: 'user', name: 'U', body: 'mine', isDefault: true } })).body.template
+    r = (await a.call<{ items: { name: string }[]; defaultId: string }>(`/api/issue-templates?key=${k}`)).body
+    expect(r.defaultId).toBe(u.id)
+    expect(r.items.map((x) => x.name).sort()).toEqual(expect.arrayContaining(['G', 'P', 'U']))
+    // Someone else neither sees nor edits my personal template.
+    const b = await login(uniq('tb'))
+    expect((await b.call<{ items: { id: string }[] }>('/api/issue-templates')).body.items.some((x) => x.id === u.id)).toBe(false)
+    expect((await b.call(`/api/issue-templates/${u.id}`, { method: 'DELETE' })).status).toBe(404)
+    await owner.call(`/api/issue-templates/${g.id}`, { method: 'DELETE' })
+  })
+  it('deleted issues and comments come back; due and project filters; retried patches apply once', async () => {
+    const { a, aId, k } = await setup()
+    const i = (await a.call<{ issue: Issue }>(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'gone', assigneeIds: [aId], dueAt: Date.now() - 86400_000 } })).body.issue
+    const c = (await a.call<{ comment: { id: string } }>(`/api/issues/${i.ref}/comments`, { method: 'POST', body: { body: 'hi' } })).body.comment
+    await a.call(`/api/issues/${i.ref}/comments/${c.id}`, { method: 'DELETE' })
+    expect((await a.call(`/api/issues/${i.ref}/comments/${c.id}/restore`, { method: 'POST' })).status).toBe(200)
+    await a.call(`/api/issues/${i.ref}`, { method: 'DELETE' })
+    expect((await a.call(`/api/issues/${i.ref}`)).status).toBe(404)
+    const trash = (await a.call<{ items: { ref: string }[] }>(`/api/projects/${k}/trash`)).body.items
+    expect(trash.map((x) => x.ref)).toEqual([i.ref])
+    expect((await a.call(`/api/issues/${i.ref}/restore`, { method: 'POST' })).status).toBe(200)
+    expect((await a.call(`/api/issues/${i.ref}`)).status).toBe(200)
+
+    await a.call(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'later', dueAt: Date.now() + 3 * 86400_000 } })
+    await a.call(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'someday' } })
+    const titles = async (q: string) => (await a.call<{ items: { title: string }[] }>(`/api/projects/${k}/issues?${q}`)).body.items.map((x) => x.title).sort()
+    expect(await titles('due=overdue')).toEqual(['gone'])
+    expect(await titles('due=week')).toEqual(['later'])
+    expect(await titles('due=none')).toEqual(['someday'])
+    // My issues narrowed to this project.
+    const other = projectKey('Q')
+    await a.call('/api/projects', { method: 'POST', body: { key: other, name: 'o' } })
+    await a.call(`/api/projects/${other}/issues`, { method: 'POST', body: { title: 'elsewhere', assigneeIds: [aId] } })
+    const mine = (await a.call<{ items: { title: string }[] }>(`/api/my-issues?project=${k}`)).body.items.map((x) => x.title)
+    expect(mine).toEqual(['gone'])
+    // A PATCH retried with the same operationId applies once (no 409 on the retry).
+    const cur = (await a.call<{ issue: Issue }>(`/api/issues/${i.ref}`)).body.issue
+    const op = crypto.randomUUID()
+    const p1 = await a.call<{ issue: Issue }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: cur.version, status: 'in_progress', operationId: op } })
+    const p2 = await a.call<{ issue: Issue }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: cur.version, status: 'in_progress', operationId: op } })
+    expect([p1.status, p2.status]).toEqual([200, 200])
+    expect(p2.body.issue.version).toBe(p1.body.issue.version)
+  })
 })

@@ -20,7 +20,8 @@ const RETRYABLE = new Set([502, 503, 504])
 /** JSON fetch with unified errors. Idempotent requests retry with backoff on network/5xx gateway failures. */
 export async function api<T>(path: string, o: Opts = {}): Promise<T> {
   const method = o.method ?? 'GET'
-  const idempotent = method === 'GET' || method === 'PUT' || method === 'DELETE'
+  // Writes carrying an operationId are de-duplicated by the server, so they may retry too.
+  const idempotent = method === 'GET' || method === 'PUT' || method === 'DELETE' || !!(o.body && typeof o.body === 'object' && 'operationId' in o.body)
   for (let attempt = 0; ; attempt++) {
     let res: Response
     try {

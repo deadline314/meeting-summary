@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, like, lt, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { Ctx } from '../context'
 import { isAdmin, requireScope } from '../context'
 import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, files, idempotency, issueSubscriptions, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, projects, references } from '../db/schema'
@@ -126,6 +126,8 @@ export type IssueFilter = {
   labelId?: string
   q?: string
   sort?: 'manual' | 'created' | 'updated' | 'priority' | 'due'
+  /** overdue = past due and unfinished; week = due within 7 days; none = no due date. */
+  due?: 'overdue' | 'week' | 'none'
   doneSince?: number
   offset: number
   limit: number
@@ -148,6 +150,9 @@ function issueWhere(ctx: Ctx, projectIds: string[], scope: { mine?: boolean }, f
     f.labelId ? sql`exists (select 1 from issue_labels l where l.issue_id = ${issues.id} and l.label_id = ${f.labelId})` : undefined,
     f.q ? or(like(issues.title, `%${f.q}%`), like(issues.description, `%${f.q}%`)) : undefined,
     f.doneSince && f.status && DONE.includes(f.status) ? gt(issues.statusChangedAt, f.doneSince) : undefined,
+    f.due === 'none' ? isNull(issues.dueAt) : undefined,
+    f.due === 'overdue' ? and(lt(issues.dueAt, Date.now()), sql`${issues.status} not in ('done','canceled')`) : undefined,
+    f.due === 'week' ? and(gt(issues.dueAt, Date.now()), lt(issues.dueAt, Date.now() + 7 * 86400_000)) : undefined,
   )
 }
 
@@ -629,6 +634,37 @@ export async function deleteIssue(ctx: Ctx, ref: string) {
     ctx.db.update(issues).set({ deletedAt: Date.now(), version: issue.version + 1 }).where(eq(issues.id, issue.id)),
     activity(ctx, { entityType: 'issue', entityId: issue.id, action: 'deleted', data: { ref, title: issue.title }, projectId: project.id }),
   ])
+}
+
+/** Deleted issues of a project, newest first, for its owners to restore. */
+export async function deletedIssues(ctx: Ctx, key: string) {
+  const { project, role } = await access(ctx, { key })
+  need(role, 'owner')
+  const rows = await ctx.db.select().from(issues).where(and(eq(issues.projectId, project.id), isNotNull(issues.deletedAt))).orderBy(desc(issues.deletedAt)).limit(100).all()
+  return rows.map((r) => ({ ref: `${project.key}-${r.number}`, title: r.title, deletedAt: r.deletedAt }))
+}
+
+export async function restoreIssue(ctx: Ctx, ref: string) {
+  requireScope(ctx, 'write')
+  const { key, number } = parseRef(ref)
+  const { project, role } = await access(ctx, { key })
+  need(role, 'owner')
+  requireActive(project)
+  const issue = await ctx.db.select().from(issues).where(and(eq(issues.projectId, project.id), eq(issues.number, number), isNotNull(issues.deletedAt))).get()
+  if (!issue) throw notFound()
+  await ctx.db.batch([
+    ctx.db.update(issues).set({ deletedAt: null, version: issue.version + 1, updatedAt: Date.now() }).where(eq(issues.id, issue.id)),
+    activity(ctx, { entityType: 'issue', entityId: issue.id, action: 'restored', data: { ref, title: issue.title }, projectId: project.id }),
+  ])
+}
+
+/** A deleted comment comes back for its author or a project owner. */
+export async function restoreIssueComment(ctx: Ctx, ref: string, id: string) {
+  requireScope(ctx, 'write')
+  const { issue, role } = await getIssue(ctx, ref)
+  const c = await ctx.db.select().from(issueComments).where(and(eq(issueComments.id, id), eq(issueComments.issueId, issue.id), isNotNull(issueComments.deletedAt))).get()
+  if (!c || (c.authorId !== ctx.user.id && role !== 'owner')) throw notFound()
+  await ctx.db.update(issueComments).set({ deletedAt: null }).where(eq(issueComments.id, id))
 }
 
 /** Ticks/unticks the n-th `- [ ]` in the description, refusing if the line no longer matches what the user saw. */

@@ -14,6 +14,7 @@ import { Tooltip } from '../../ui/tooltip'
 import { useTour } from '../../app/tour'
 import { CreateIssueHost, openCreateIssue } from './create-issue'
 import { DuplicateIssueHost } from './duplicate-issue'
+import { RelateHost } from './relate'
 import { useProjects, type ProjectRow } from './model'
 import { SavedViewsNav } from './saved-views'
 
@@ -35,6 +36,7 @@ export function ProjectsLayout() {
       </div>
       <CreateIssueHost />
       <DuplicateIssueHost />
+      <RelateHost />
       {creating && <NewProjectDialog onClose={() => setCreating(false)} />}
     </div>
   )

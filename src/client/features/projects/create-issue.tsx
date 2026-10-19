@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Dialog as D } from 'radix-ui'
-import { FolderKanban, X } from 'lucide-react'
+import { FileText, FolderKanban, X } from 'lucide-react'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useScope } from '../../lib/actions'
 import { api } from '../../lib/api'
@@ -11,6 +11,7 @@ import { cx } from '../../ui/cx'
 import { toast, toastError } from '../../ui/toast'
 import { IssueStatusIcon, PriorityIcon } from './icons'
 import { canWrite, invalidateIssues, useLabels, useProject, useProjects, type IssueRow, type Priority, type Status } from './model'
+import { useTemplates } from './templates'
 import { AssigneeIcon, LabelChip, LabelIcon, OptionPicker, Pill, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 type Open = { projectKey?: string; status?: Status; parentRef?: string } | null
@@ -85,6 +86,25 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
   const prioOpts = usePriorityOptions()
   const memberOpts = useAssigneeOptions(project.data?.members.map((m) => m.userId))
   const dirty = !!(d.title.trim() || d.description.trim())
+  const templates = useTemplates(projectKey || undefined)
+  const [tplId, setTplId] = useState<string | null>(null)
+  const undoDesc = useRef<string | null>(null)
+  const applyTemplate = (id: string | null) => {
+    const tpl = templates.data?.items.find((x) => x.id === id)
+    setTplId(id)
+    undoDesc.current = d.description
+    setD((x) => ({ ...x, description: tpl?.body ?? '' }))
+  }
+  // An empty description takes the default template (personal > project > global), once per project.
+  const [autoFor, setAutoFor] = useState<string | null>(null)
+  const def = templates.data?.items.find((x) => x.id === templates.data?.defaultId)
+  if (templates.data && autoFor !== projectKey) {
+    setAutoFor(projectKey)
+    if (def && !d.description.trim()) {
+      setTplId(def.id)
+      setD((x) => ({ ...x, description: def.body }))
+    }
+  }
 
   const requestClose = () => {
     if (dirty) setAsking(true)
@@ -177,7 +197,19 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
             />
             <textarea
               value={d.description}
-              onChange={(e) => setD((x) => ({ ...x, description: e.target.value }))}
+              onKeyDown={(e) => {
+                // Undo a template switch in one step.
+                if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && undoDesc.current !== null) {
+                  e.preventDefault()
+                  const prev = undoDesc.current
+                  undoDesc.current = null
+                  setD((x) => ({ ...x, description: prev }))
+                }
+              }}
+              onChange={(e) => {
+                undoDesc.current = null
+                setD((x) => ({ ...x, description: e.target.value }))
+              }}
               placeholder={t('issue.descPh')}
               aria-label={t('issue.descPh')}
               className="min-h-32 flex-1 resize-none bg-transparent py-2 text-sm leading-relaxed placeholder:text-fg-4 focus:outline-none md:max-h-[40vh]"
@@ -197,6 +229,19 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
                 </Pill>
               }
             />
+            {!!templates.data?.items.length && (
+              <OptionPicker
+                options={[{ value: '', label: t('tpl.none') }, ...templates.data.items.map((x) => ({ value: x.id, label: `${x.name} · ${t(`tpl.scope.${x.scope}` as MsgKey)}` }))]}
+                value={[tplId ?? '']}
+                onChange={([id]) => applyTemplate(id || null)}
+                placeholder={t('tpl.title')}
+                trigger={
+                  <Pill icon={<FileText className="size-4 text-fg-4" />} aria-label={t('tpl.title')}>
+                    {templates.data.items.find((x) => x.id === tplId)?.name ?? t('tpl.title')}
+                  </Pill>
+                }
+              />
+            )}
             <OptionPicker
               options={prioOpts}
               value={[d.priority]}

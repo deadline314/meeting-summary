@@ -410,3 +410,19 @@ export const issueSubscriptions = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.issueId, t.userId] }), index('issue_subscriptions_user').on(t.userId)],
 )
+
+/** Issue description templates: personal (`ownerId`), per project (`projectId`) or site-wide. */
+export const issueTemplates = sqliteTable(
+  'issue_templates',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope', { enum: ['user', 'project', 'global'] }).notNull(),
+    ownerId: text('owner_id'),
+    projectId: text('project_id'),
+    name: text('name').notNull(),
+    body: text('body').notNull(),
+    isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('issue_templates_owner').on(t.ownerId), index('issue_templates_project').on(t.projectId)],
+)

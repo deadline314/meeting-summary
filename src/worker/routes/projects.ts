@@ -16,6 +16,9 @@ import {
   idempotent,
   issueDetail,
   duplicateIssue,
+  deletedIssues,
+  restoreIssue,
+  restoreIssueComment,
   setSubscribed,
   issueStats,
   issueTimeline,
@@ -47,6 +50,7 @@ import {
   upsertLabel,
   visibleProjectIds,
 } from '../services/projects'
+import { deleteTemplate, listTemplates, saveTemplate } from '../services/issue-templates'
 import { refResolvers, slices } from './home'
 
 export const projectRoutes = new Hono<AppEnv>()
@@ -141,6 +145,8 @@ const filter = z.object({
   labelId: z.string().optional(),
   q: z.string().max(100).optional(),
   sort: z.enum(['manual', 'created', 'updated', 'priority', 'due']).optional(),
+  due: z.enum(['overdue', 'week', 'none']).optional(),
+  project: z.string().max(6).optional(),
   doneSince: z.coerce.number().int().optional(),
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(0).max(200).default(50),
@@ -152,6 +158,15 @@ projectRoutes.get('/projects/:key/counts', async (c) => {
   return c.json(await statusCounts(ctxOf(c), { key: c.req.param('key') }, f))
 })
 projectRoutes.get('/projects/:key/stats', async (c) => c.json(await issueStats(ctxOf(c), c.req.param('key'))))
+
+projectRoutes.get('/issue-templates', async (c) => c.json(await listTemplates(ctxOf(c), c.req.query('key') || undefined)))
+const templateBody = z.object({ scope: z.enum(['user', 'project', 'global']), key: z.string().optional(), name: z.string().trim().min(1).max(60), body: z.string().max(20_000), isDefault: z.boolean().default(false) })
+projectRoutes.post('/issue-templates', async (c) => c.json({ template: await saveTemplate(ctxOf(c), await body(c, templateBody)) }, 201))
+projectRoutes.put('/issue-templates/:id', async (c) => c.json({ template: await saveTemplate(ctxOf(c), { ...(await body(c, templateBody)), id: c.req.param('id') }) }))
+projectRoutes.delete('/issue-templates/:id', async (c) => {
+  await deleteTemplate(ctxOf(c), c.req.param('id'))
+  return c.json({ ok: true })
+})
 
 projectRoutes.get('/saved-views', async (c) => c.json({ items: await listSavedViews(ctxOf(c)) }))
 projectRoutes.post('/saved-views', async (c) => {
@@ -172,10 +187,14 @@ projectRoutes.get('/timeline', async (c) => {
   const q = parse(filter.omit({ status: true, sort: true, offset: true, limit: true }).extend({ key: z.string().optional() }), c.req.query())
   return c.json(await issueTimeline(ctxOf(c), { key: q.key }, q))
 })
-projectRoutes.get('/my-issues', async (c) => c.json(await listIssues(ctxOf(c), { mine: true }, parse(filter, c.req.query()))))
+// `project` narrows My issues to one project (still only issues assigned to me).
+projectRoutes.get('/my-issues', async (c) => {
+  const { project, ...f } = parse(filter, c.req.query())
+  return c.json(await listIssues(ctxOf(c), { mine: true, key: project }, f))
+})
 projectRoutes.get('/my-issues/counts', async (c) => {
-  const { status: _s, offset: _o, limit: _l, ...f } = parse(filter, c.req.query())
-  return c.json(await statusCounts(ctxOf(c), { mine: true }, f))
+  const { status: _s, offset: _o, limit: _l, project, ...f } = parse(filter, c.req.query())
+  return c.json(await statusCounts(ctxOf(c), { mine: true, key: project }, f))
 })
 
 const issueFields = {
@@ -196,6 +215,16 @@ projectRoutes.post('/projects/:key/issues', async (c) => {
 })
 
 projectRoutes.get('/issues/:ref', async (c) => c.json(await issueDetail(ctxOf(c), c.req.param('ref'))))
+
+projectRoutes.get('/projects/:key/trash', async (c) => c.json({ items: await deletedIssues(ctxOf(c), c.req.param('key')) }))
+projectRoutes.post('/issues/:ref/restore', async (c) => {
+  await restoreIssue(ctxOf(c), c.req.param('ref'))
+  return c.json({ ok: true })
+})
+projectRoutes.post('/issues/:ref/comments/:id/restore', async (c) => {
+  await restoreIssueComment(ctxOf(c), c.req.param('ref'), c.req.param('id'))
+  return c.json({ ok: true })
+})
 
 projectRoutes.put('/issues/:ref/subscription', async (c) => {
   const { on } = await body(c, z.object({ on: z.boolean() }))

@@ -2,7 +2,7 @@ import { useNavigate, useRouter } from '@tanstack/react-router'
 import { BarChart3, CalendarRange, FolderKanban, Inbox, Kanban, List, Plus, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
-import { useDebounced, useIsMobile } from '../../lib/hooks'
+import { useDebounced } from '../../lib/hooks'
 import { useI18n, type MsgKey } from '../../lib/i18n'
 import { Button, IconButton } from '../../ui/button'
 import { Input, Select } from '../../ui/field'
@@ -10,7 +10,7 @@ import { Badge, EmptyState, Skeleton } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
 import { openCreateIssue } from './create-issue'
 import { IssueBoard, IssueList, ViewProvider, type Filters } from './issue-views'
-import { PRIORITIES, canWrite, useLabels, useProject, useProjects } from './model'
+import { PRIORITIES, STATUSES, canWrite, useLabels, useProject, useProjects } from './model'
 import { useAssigneeOptions } from './pickers'
 import { NewProjectDialog, VisibilityBadge } from './projects-layout'
 import { ProjectSettings, type SettingsTab } from './project-settings'
@@ -18,7 +18,7 @@ import { SaveViewButton, useViews } from './saved-views'
 import { ProjectStats } from './stats'
 import { IssueTimeline } from './timeline'
 
-export type ProjectSearch = Filters & { view?: 'list' | 'board' | 'timeline' | 'stats'; settings?: SettingsTab }
+export type ProjectSearch = Omit<Filters, 'due'> & { due?: 'overdue' | 'week' | 'none'; view?: 'list' | 'board' | 'timeline' | 'stats'; settings?: SettingsTab }
 
 function Toolbar({
   search,
@@ -26,12 +26,15 @@ function Toolbar({
   labels,
   memberIds,
   showView,
+  projects,
 }: {
   search: ProjectSearch
   setSearch(s: Partial<ProjectSearch>): void
   labels?: { id: string; name: string }[]
   memberIds?: string[]
   showView: boolean
+  /** My issues only: narrow to one project. */
+  projects?: { key: string; name: string }[]
 }) {
   const { t } = useI18n()
   const [q, setQ] = useState(search.q ?? '')
@@ -53,10 +56,9 @@ function Toolbar({
         ]
       : []),
   ])
-  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q)
-  const mobile = useIsMobile()
+  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q || search.due || search.statuses || search.project)
   const [showFilters, setShowFilters] = useState(false)
-  const active = [search.assigneeId, search.priority, search.labelId, search.sort].filter(Boolean).length
+  const active = [search.assigneeId, search.priority, search.labelId, search.sort, search.due, search.statuses, search.project].filter(Boolean).length
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
       {showView && (
@@ -77,14 +79,35 @@ function Toolbar({
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-4" />
         <Input ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('pm.search')} aria-label={t('pm.search')} className="h-9 pl-9" />
       </div>
-      {mobile && (
+      {/* Filters fold behind one button (Linear-style) so the toolbar stays on one line. */}
+      {(
         <Button size="sm" variant={active ? 'soft' : 'secondary'} icon={<SlidersHorizontal className="size-4" />} onClick={() => setShowFilters((v) => !v)} aria-expanded={showFilters}>
           {t('pm.filter')}
           {active > 0 && ` ${active}`}
         </Button>
       )}
-      {(!mobile || showFilters) && (
-      <div className="flex w-full flex-wrap items-center gap-2 md:contents">
+      {showFilters && (
+      <div className="flex w-full flex-wrap items-center gap-2">
+      {projects && (
+        <Select value={search.project ?? ''} onChange={(e) => setSearch({ project: e.target.value || undefined })} aria-label={t('pm.filter.project')} className="h-9 w-auto">
+          <option value="">{t('pm.filter.project')}</option>
+          {projects.map((p) => (
+            <option key={p.key} value={p.key}>
+              {p.key} · {p.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      {search.view !== 'timeline' && search.view !== 'stats' && (
+        <Select value={search.statuses ?? ''} onChange={(e) => setSearch({ statuses: e.target.value || undefined })} aria-label={t('pm.filter.status')} className="h-9 w-auto">
+          <option value="">{t('pm.filter.status')}</option>
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {t(`status.${s}` as MsgKey)}
+            </option>
+          ))}
+        </Select>
+      )}
       <Select value={search.assigneeId ?? ''} onChange={(e) => setSearch({ assigneeId: e.target.value || undefined })} aria-label={t('pm.filter.assignee')} className="h-9 w-auto">
         <option value="">{t('pm.filter.assignee')}</option>
         {assignees.map((a) => (
@@ -111,6 +134,14 @@ function Toolbar({
           ))}
         </Select>
       )}
+      <Select value={search.due ?? ''} onChange={(e) => setSearch({ due: (e.target.value || undefined) as ProjectSearch['due'] })} aria-label={t('pm.filter.due')} className="h-9 w-auto">
+        <option value="">{t('pm.filter.due')}</option>
+        {(['overdue', 'week', 'none'] as const).map((d) => (
+          <option key={d} value={d}>
+            {t(`pm.due.${d}` as MsgKey)}
+          </option>
+        ))}
+      </Select>
       <Select value={search.sort ?? ''} onChange={(e) => setSearch({ sort: e.target.value || undefined })} aria-label={t('pm.sort.manual')} className="h-9 w-auto">
         {(['manual', 'created', 'updated', 'priority', 'due'] as const).map((s) => (
           <option key={s} value={s === 'manual' ? '' : s}>
@@ -121,7 +152,7 @@ function Toolbar({
       </div>
       )}
       {filtered && (
-        <Button size="sm" variant="ghost" onClick={() => (setQ(''), setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined }))}>
+        <Button size="sm" variant="ghost" onClick={() => (setQ(''), setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined, due: undefined, statuses: undefined, project: undefined }))}>
           {t('common.clearFilters')}
         </Button>
       )}
@@ -172,7 +203,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
   const { t } = useI18n()
   const projects = useProjects()
   const [creating, setCreating] = useState(false)
-  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, q: search.q, sort: search.sort }
+  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, q: search.q, sort: search.sort, due: search.due, statuses: search.statuses, project: search.project }
   return (
     <div>
       <MobileProjectPicker />
@@ -189,7 +220,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
           {t('pm.new')}
         </Button>
       </div>
-      <Toolbar search={search} setSearch={setSearch} showView={false} />
+      <Toolbar search={search} setSearch={setSearch} showView={false} projects={projects.data} />
       {projects.data && !projects.data.length ? (
         <EmptyState
           className="py-20"
@@ -204,7 +235,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
         />
       ) : (
         <ViewProvider scope={{ mine: true }} labels={[]}>
-          <IssueList filters={filters} empty={<EmptyState className="py-20" icon={<Inbox />} title={search.q || search.priority ? t('pm.emptyFiltered') : t('pm.emptyMine')} />} />
+          <IssueList filters={filters} empty={<EmptyState className="py-20" icon={<Inbox />} title={search.q || search.priority || search.due || search.statuses || search.project ? t('pm.emptyFiltered') : t('pm.emptyMine')} />} />
         </ViewProvider>
       )}
       {creating && <NewProjectDialog onClose={() => setCreating(false)} />}
@@ -225,8 +256,8 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
     )
   if (q.isError) throw q.error
   const p = q.data
-  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, labelId: search.labelId, q: search.q, sort: search.sort }
-  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q)
+  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, labelId: search.labelId, q: search.q, sort: search.sort, due: search.due, statuses: search.statuses }
+  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q || search.due || search.statuses)
   const writable = canWrite(p.role) && p.state === 'active'
   return (
     <div className="flex min-h-full flex-col">
@@ -267,7 +298,7 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
                   icon={<Search />}
                   title={t('pm.emptyFiltered')}
                   action={
-                    <Button size="sm" onClick={() => setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined })}>
+                    <Button size="sm" onClick={() => setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined, due: undefined, statuses: undefined })}>
                       {t('common.clearFilters')}
                     </Button>
                   }

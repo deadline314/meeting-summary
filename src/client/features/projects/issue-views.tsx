@@ -18,18 +18,21 @@ import { toast, toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
 import { openCreateIssue } from './create-issue'
 import { openDuplicate } from './duplicate-issue'
+import { openRelate } from './relate'
 import { useUnreadIssues } from '../../app/notifications'
 import { IssueStatusIcon, PriorityIcon } from './icons'
-import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, rememberNav, useProjects, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
+import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, readNav, rememberNav, useProjects, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
 import { LabelChip, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 export type Scope = { key?: string; mine?: boolean }
-export type Filters = { assigneeId?: string; priority?: string; labelId?: string; q?: string; sort?: string }
+export type Filters = { assigneeId?: string; priority?: string; labelId?: string; q?: string; sort?: string; due?: string; project?: string; statuses?: string }
 
 const PAGE = 50
 const base = (s: Scope) => (s.key ? `/api/projects/${s.key}` : '/api/my-issues')
 const qs = (f: Filters & Record<string, unknown>) =>
-  new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined && v !== '' && v !== false) as [string, string][]).toString()
+  new URLSearchParams(Object.entries(f).filter(([k, v]) => k !== 'statuses' && v !== undefined && v !== '' && v !== false) as [string, string][]).toString()
+/** Status groups to show (comma list in the URL); empty means all. */
+const shown = (f: Filters) => (f.statuses ? STATUSES.filter((s) => f.statuses!.split(',').includes(s)) : STATUSES)
 const FOURTEEN_DAYS = 14 * 86400_000
 
 export function useCounts(scope: Scope, f: Filters) {
@@ -94,7 +97,11 @@ export async function applyPatch(rows: IssueRow[], patch: IssuePatch, t: (k: Msg
 }
 
 export function ViewProvider({ scope, role, labels, memberIds, children }: { scope: Scope; role?: Access; labels: Label[]; memberIds?: string[]; children: ReactNode }) {
-  const [cursor, setCursor] = useState<string | null>(null)
+  // Coming back from a detail page: select the issue that was open (scroll is restored by the router).
+  const [cursor, setCursor] = useState<string | null>(() => {
+    const n = readNav()
+    return n && n.from === location.pathname + location.search ? (n.last ?? null) : null
+  })
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [picker, setPicker] = useState<Ctx['picker']>(null)
   const rows = useRef(new Map<Status, IssueRow[]>())
@@ -157,6 +164,20 @@ function Keyboard() {
     v.setCursor(next.ref)
     document.querySelector(`[data-ref="${next.ref}"]`)?.scrollIntoView({ block: 'nearest' })
   }
+  // Board: jump to the same position in the neighbouring non-empty column.
+  const side = (d: number) => {
+    const all = v.all()
+    const cur = all.find((x) => x.ref === v.cursor) ?? all[0]
+    if (!cur) return
+    const cols = STATUSES.filter((s) => all.some((x) => x.status === s))
+    const here = all.filter((x) => x.status === cur.status)
+    const nextCol = cols[cols.indexOf(cur.status) + d]
+    if (!nextCol) return
+    const there = all.filter((x) => x.status === nextCol)
+    const next = there[Math.min(here.indexOf(cur), there.length - 1)]!
+    v.setCursor(next.ref)
+    document.querySelector(`[data-ref="${next.ref}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
   const open = () => {
     const all = v.all()
     const c = all.find((x) => x.ref === v.cursor)
@@ -170,6 +191,8 @@ function Keyboard() {
     { id: 'pm-down2', label: 'pm.moveDown', keys: 'arrowdown', hidden: true, run: () => move(1) },
     { id: 'pm-up', label: 'pm.moveUp', keys: 'k', group: 'nav.projects', run: () => move(-1) },
     { id: 'pm-up2', label: 'pm.moveUp', keys: 'arrowup', hidden: true, run: () => move(-1) },
+    { id: 'pm-left', label: 'pm.moveLeft', keys: 'arrowleft', group: 'nav.projects', run: () => side(-1) },
+    { id: 'pm-right', label: 'pm.moveRight', keys: 'arrowright', group: 'nav.projects', run: () => side(1) },
     { id: 'pm-open', label: 'pm.openIssue', keys: 'enter', group: 'nav.projects', run: open },
     { id: 'pm-select', label: 'pm.toggleSelect', keys: 'x', group: 'nav.projects', run: () => v.cursor && v.toggleChecked(v.cursor) },
     { id: 'pm-status', label: 'picker.status', keys: 's', group: 'nav.projects', run: pick('s') },
@@ -234,7 +257,7 @@ export function IssueList({ filters, empty }: { filters: Filters; empty: ReactNo
   if (total === 0) return <>{empty}</>
   return (
     <div className="flex flex-col">
-      {STATUSES.map((s) => (
+      {shown(filters).map((s) => (
         <Group
           key={s}
           status={s}
@@ -335,6 +358,9 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
           if (e.shiftKey || e.metaKey || e.ctrlKey) v.toggleChecked(issue.ref)
           else open()
         }}
+        // ponytail: CSS content-visibility instead of a JS virtual list — off-screen rows skip
+        // layout and paint, which keeps 200+ row groups smooth; swap for windowing if lists reach thousands.
+        style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}
         className={cx(
           'group flex h-11 cursor-pointer items-center gap-2 border-b border-line px-3 text-sm transition-colors max-md:h-auto max-md:min-h-14 max-md:flex-wrap max-md:py-2 md:px-4',
           active && 'bg-surface-2',
@@ -572,9 +598,27 @@ function IssueContextMenu({ issue, children }: { issue: IssueRow; children: Reac
           )}
           <CM.Separator className="my-1 h-px bg-line" />
           {!multi && editable && (
-            <CM.Item className={item} onSelect={() => openCreateIssue({ projectKey: issue.projectKey, parentRef: issue.ref })}>
-              <GitBranch /> {t('pm.rel.child')}
-            </CM.Item>
+            <>
+              <CM.Item className={item} onSelect={() => openCreateIssue({ projectKey: issue.projectKey, parentRef: issue.ref })}>
+                <GitBranch /> {t('pm.rel.child')}
+              </CM.Item>
+              <CM.Sub>
+                <CM.SubTrigger className={item}>
+                  <Link2 />
+                  <span className="flex-1">{t('pm.relation')}</span>
+                  <ChevronRight />
+                </CM.SubTrigger>
+                <CM.Portal>
+                  <CM.SubContent data-layer className={panel}>
+                    {(['parent', 'blocks', 'blocked_by', 'relates', 'duplicate_of'] as const).map((k) => (
+                      <CM.Item key={k} className={item} onSelect={() => openRelate({ issue, kind: k })}>
+                        {t(k === 'parent' ? 'pm.rel.setParent' : (`pm.rel.${k}` as MsgKey))}…
+                      </CM.Item>
+                    ))}
+                  </CM.SubContent>
+                </CM.Portal>
+              </CM.Sub>
+            </>
           )}
           {!multi && editable && (
             <CM.Item className={item} onSelect={() => openDuplicate(issue)}>
@@ -618,7 +662,7 @@ export function IssueBoard({ filters }: { filters: Filters }) {
   const isOpen = (s: Status) => toggled.get(s) ?? (!isDone(s) && (s === 'todo' || (counts.data?.[s] ?? 0) > 0))
   return (
     <div className="flex h-full min-h-[60vh] gap-3 overflow-x-auto p-3 md:p-4 max-md:snap-x max-md:snap-mandatory">
-      {STATUSES.map((s) => (
+      {shown(filters).map((s) => (
         <Column
           key={s}
           status={s}
@@ -686,7 +730,7 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
         }}
         onDragLeave={() => setOver(null)}
         onDrop={(e) => onDrop(e, 0)}
-        className={cx('flex w-11 shrink-0 flex-col items-center gap-2 rounded-2xl border bg-surface-2 py-3 text-xs text-fg-3 transition-colors hover:bg-surface-3', over ? 'border-accent bg-accent-soft' : 'border-line')}
+        className={cx('flex w-11 shrink-0 flex-col items-center gap-2 rounded-2xl border bg-surface-2 py-3 text-xs text-fg-3 transition-colors hover:bg-surface-3 data-[drop]:border-accent data-[drop]:bg-accent-soft', over ? 'border-accent bg-accent-soft' : 'border-line')}
         aria-label={t(`status.${status}` as MsgKey)}
       >
         <IssueStatusIcon status={status} />
@@ -697,7 +741,7 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
   return (
     <div
       data-column={status}
-      className="flex min-w-60 flex-1 flex-col rounded-2xl bg-surface-2 md:max-w-80 max-md:w-[85vw] max-md:shrink-0 max-md:snap-center"
+      className="flex min-w-60 flex-1 flex-col rounded-2xl bg-surface-2 transition-colors data-[drop]:bg-accent-soft md:max-w-80 max-md:w-[85vw] max-md:shrink-0 max-md:snap-center"
       onDragOver={(e) => {
         e.preventDefault()
         if (!over) setOver({ index: rows.length })
@@ -746,16 +790,80 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
 
 const DropLine = () => <motion.div layoutId="drop-line" className="my-1 h-0.5 rounded-full bg-accent" />
 
+/** Status column under a point (touch drag), highlighted while hovered. */
+function columnAt(x: number, y: number) {
+  return (document.elementFromPoint(x, y)?.closest('[data-column]') as HTMLElement | null) ?? null
+}
+
 function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
   const v = useView()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [dragging, setDragging] = useState(false)
+  const el = useRef<HTMLDivElement>(null)
+  // Touch: hold 450 ms without moving to pick the card up, then slide it onto a column.
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number; active: boolean; over: HTMLElement | null } | null>(null)
+  useEffect(() => {
+    const node = el.current
+    if (!node) return
+    // Native, non-passive: once the card is picked up the page must not scroll under the finger.
+    const block = (e: TouchEvent) => press.current?.active && e.preventDefault()
+    node.addEventListener('touchmove', block, { passive: false })
+    return () => node.removeEventListener('touchmove', block)
+  }, [])
+  const endPress = async (x?: number, y?: number) => {
+    const p = press.current
+    press.current = null
+    if (!p) return
+    clearTimeout(p.timer)
+    p.over?.removeAttribute('data-drop')
+    if (!p.active) return
+    setDragging(false)
+    const col = x === undefined || y === undefined ? null : columnAt(x, y)
+    const status = col?.dataset.column as Status | undefined
+    if (!status || status === issue.status) return
+    try {
+      await api(`/api/issues/${issue.ref}/move`, { method: 'POST', body: { version: issue.version, status, beforeRef: null, afterRef: null } })
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'conflict') toast(t('error.conflict'), 'error')
+      else toastError(err)
+    } finally {
+      invalidateIssues()
+    }
+  }
   return (
     <IssueContextMenu issue={issue}>
       <motion.div
+        ref={el}
         layout
         data-ref={issue.ref}
         draggable={draggable}
+        onPointerDown={(e) => {
+          if (e.pointerType !== 'touch' || !draggable) return
+          const p = { x: e.clientX, y: e.clientY, active: false, over: null as HTMLElement | null, timer: setTimeout(() => {
+            p.active = true
+            setDragging(true)
+            navigator.vibrate?.(10)
+          }, 450) }
+          press.current = p
+        }}
+        onPointerMove={(e) => {
+          const p = press.current
+          if (!p) return
+          if (!p.active) {
+            // Moving first means scrolling, not dragging.
+            if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) endPress()
+            return
+          }
+          const col = columnAt(e.clientX, e.clientY)
+          if (col !== p.over) {
+            p.over?.removeAttribute('data-drop')
+            col?.setAttribute('data-drop', '')
+            p.over = col
+          }
+        }}
+        onPointerUp={(e) => endPress(e.clientX, e.clientY)}
+        onPointerCancel={() => endPress()}
         onDragStart={(e) => {
           const ev = e as unknown as DragEvent
           ev.dataTransfer.setData('text/issue', issue.ref)
@@ -769,8 +877,8 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
           navigate({ to: `/projects/${issue.projectKey}/${issue.ref}` })
         }}
         className={cx(
-          'cursor-pointer rounded-xl border border-line bg-surface p-3 text-sm shadow-sm transition-[box-shadow,opacity,transform] hover:shadow-card',
-          dragging && 'opacity-40',
+          'cursor-pointer touch-manipulation rounded-xl border border-line bg-surface p-3 text-sm shadow-sm transition-[box-shadow,opacity,transform] select-none hover:shadow-card',
+          dragging && 'scale-[1.03] opacity-70 shadow-card ring-2 ring-accent',
           v.cursor === issue.ref && 'ring-2 ring-accent-soft',
           v.checked.has(issue.ref) && 'ring-2 ring-accent',
         )}

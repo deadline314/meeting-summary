@@ -74,7 +74,10 @@ export function appRoutes(parent: AnyRoute) {
     labelId: z.string().optional(),
     q: z.string().optional(),
     sort: z.string().optional(),
-    settings: z.enum(['general', 'members', 'labels', 'lifecycle']).optional(),
+    due: z.enum(['overdue', 'week', 'none']).optional(),
+    statuses: z.string().optional(),
+    project: z.string().optional(),
+    settings: z.enum(['general', 'members', 'labels', 'templates', 'lifecycle']).optional(),
   })
   const projects = createRoute({ getParentRoute: () => parent, path: '/projects', component: ProjectsLayout })
   const mine = createRoute({

@@ -90,7 +90,7 @@ export function invalidateIssues() {
 export type IssuePatch = Partial<{ title: string; description: string; status: Status; priority: Priority; assigneeIds: string[]; labelIds: string[]; dueAt: number | null; parentRef: string | null }>
 
 export const patchIssue = (i: Pick<IssueRow, 'ref' | 'version'>, patch: IssuePatch) =>
-  api<{ issue: IssueRow }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: i.version, ...patch } })
+  api<{ issue: IssueRow }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: i.version, ...patch, operationId: crypto.randomUUID() } })
 
 /** Remembers the list a detail page was opened from, for prev/next and returning to the same row. */
 const NAV_KEY = 'ms.issue-nav'
@@ -101,7 +101,17 @@ export function rememberNav(refs: string[], from: string) {
     /* ignore */
   }
 }
-export function readNav(): { refs: string[]; from: string } | null {
+/** Marks the issue being viewed so the list can select it again on the way back. */
+export function rememberLast(ref: string) {
+  const n = readNav()
+  if (!n) return
+  try {
+    sessionStorage.setItem(NAV_KEY, JSON.stringify({ ...n, last: ref }))
+  } catch {
+    /* ignore */
+  }
+}
+export function readNav(): { refs: string[]; from: string; last?: string } | null {
   try {
     return JSON.parse(sessionStorage.getItem(NAV_KEY) ?? 'null')
   } catch {

@@ -1,4 +1,6 @@
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { TemplatesManager } from './templates'
 import { Archive, CheckCircle2, RotateCcw, Trash2, UserPlus, X } from 'lucide-react'
 import { useState } from 'react'
 import { api, queryClient } from '../../lib/api'
@@ -16,7 +18,7 @@ import { UserPicker } from '../../ui/user-picker'
 import { canManage, invalidateIssues, useLabels, type ProjectDetail } from './model'
 import { LabelChip } from './pickers'
 
-export type SettingsTab = 'general' | 'members' | 'labels' | 'lifecycle'
+export type SettingsTab = 'general' | 'members' | 'labels' | 'templates' | 'lifecycle'
 
 const refresh = (key: string) => {
   queryClient.invalidateQueries({ queryKey: ['project', key] })
@@ -34,6 +36,7 @@ export function ProjectSettings({ project, tab, onTab, onClose }: { project: Pro
           { value: 'general', label: t('settings.pm.general') },
           { value: 'members', label: t('settings.pm.members') },
           { value: 'labels', label: t('settings.pm.labels') },
+          { value: 'templates', label: t('tpl.title') },
           { value: 'lifecycle', label: t('settings.pm.lifecycle') },
         ]}
       />
@@ -41,6 +44,7 @@ export function ProjectSettings({ project, tab, onTab, onClose }: { project: Pro
         {tab === 'general' && <General p={project} />}
         {tab === 'members' && <Members p={project} />}
         {tab === 'labels' && <Labels p={project} />}
+        {tab === 'templates' && <TemplatesManager p={project} />}
         {tab === 'lifecycle' && <Lifecycle p={project} onClose={onClose} />}
       </div>
     </Dialog>
@@ -264,6 +268,40 @@ function Labels({ p }: { p: ProjectDetail }) {
   )
 }
 
+/** Soft-deleted issues; owners bring them back with their number, history and comments intact. */
+function DeletedIssues({ projectKey }: { projectKey: string }) {
+  const { t, fmt } = useI18n()
+  const q = useQuery({ queryKey: ['trash', projectKey], queryFn: async () => (await api<{ items: { ref: string; title: string; deletedAt: number }[] }>(`/api/projects/${projectKey}/trash`)).items })
+  if (!q.data?.length) return null
+  return (
+    <div className="rounded-xl border border-line">
+      <div className="border-b border-line px-4 py-2.5 font-semibold">{t('trash.title')}</div>
+      <ul className="divide-y divide-line">
+        {q.data.map((i) => (
+          <li key={i.ref} className="flex items-center gap-3 px-4 py-2">
+            <span className="font-mono text-xs text-fg-4">{i.ref}</span>
+            <span className="min-w-0 flex-1 truncate">{i.title}</span>
+            <span className="hidden text-xs text-fg-4 sm:inline">{fmt.relative(i.deletedAt)}</span>
+            <Button
+              size="sm"
+              icon={<RotateCcw className="size-3.5" />}
+              onClick={() =>
+                api(`/api/issues/${i.ref}/restore`, { method: 'POST' }).then(() => {
+                  toast(t('trash.restored', { ref: i.ref }))
+                  queryClient.invalidateQueries({ queryKey: ['trash', projectKey] })
+                  invalidateIssues()
+                }, toastError)
+              }
+            >
+              {t('trash.restore')}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function Lifecycle({ p, onClose }: { p: ProjectDetail; onClose(): void }) {
   const { t } = useI18n()
   const me = useMe()
@@ -282,6 +320,7 @@ function Lifecycle({ p, onClose }: { p: ProjectDetail; onClose(): void }) {
   const canClose = owner || p.reviewerId === me.id
   return (
     <div className="flex flex-col gap-4 text-sm">
+      {owner && p.state === 'active' && <DeletedIssues projectKey={p.key} />}
       <div className="flex items-center gap-2">
         {t('issue.status')}：<Badge tone={p.state === 'active' ? 'success' : 'neutral'}>{t(`settings.pm.state.${p.state}` as MsgKey)}</Badge>
       </div>

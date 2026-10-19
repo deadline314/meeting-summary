@@ -26,9 +26,10 @@ import { DrivePickerButton } from '../files/drive'
 import { Html } from '../notes/preview'
 import { markEntityRead, useUnreadIssues } from '../../app/notifications'
 import { openDuplicate } from './duplicate-issue'
+import { offerCloseDuplicate } from './relate'
 import { StaleBadge } from './issue-views'
 import { IssueStatusIcon, PriorityIcon } from './icons'
-import { canWrite, invalidateIssues, isDone, readNav, useLabels, useProject, type IssuePatch, type IssueRow, type Status } from './model'
+import { canWrite, invalidateIssues, isDone, readNav, rememberLast, useLabels, useProject, type IssuePatch, type IssueRow, type Status } from './model'
 import { AssigneeIcon, LabelChip, LabelIcon, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 type Detail = {
@@ -62,6 +63,7 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
   const [base, setBase] = useState<number | null>(d.issue.version)
   const mobile = useIsMobile()
   const nav = useMemo(() => readNav(), [])
+  useEffect(() => rememberLast(issueRef), [issueRef])
   const idx = nav?.refs.indexOf(issueRef) ?? -1
   const go = (d: number) => {
     const r = nav?.refs[idx + d]
@@ -186,7 +188,7 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
             </section>
           )}
           <hr className="border-line" />
-          <Timeline issueRef={i.ref} issueId={i.id} editable={canWrite(i.role)} memberIds={project.data?.members.map((m) => m.userId)} />
+          <Timeline issueRef={i.ref} issueId={i.id} editable={canWrite(i.role)} owner={i.role === 'owner'} memberIds={project.data?.members.map((m) => m.userId)} />
         </div>
         <aside className="flex flex-col gap-5 lg:sticky lg:top-5 lg:self-start lg:border-l lg:border-line lg:pl-5">
           {!mobile && <Properties issue={i} editable={editable} labels={labels.data ?? []} memberIds={project.data?.members.map((m) => m.userId)} onSave={save} />}
@@ -599,7 +601,12 @@ function Relations({ d, editable, adding, setAdding }: { d: Detail; editable: bo
                     key={h.id}
                     onClick={() =>
                       api(`/api/issues/${d.issue.ref}/relations`, { method: 'POST', body: { type, target: h.id } }).then(
-                        () => (setQ(''), setAdding(false), refresh()),
+                        async () => {
+                          setQ('')
+                          setAdding(false)
+                          if (type === 'duplicate_of') await offerCloseDuplicate(d.issue, h.id, t)
+                          refresh()
+                        },
                         (e) => toastError(e),
                       )
                     }
@@ -693,7 +700,7 @@ type TimelineItem =
   | { kind: 'comment'; at: number; comment: { id: string; parentId: string | null; authorId: string; body: string; createdAt: number; editedAt: number | null; deletedAt: number | null; version: number } }
   | { kind: 'change'; at: number; change: { id: string; actorId: string | null; action: string; data: Record<string, unknown>; source: string; createdAt: number } }
 
-function Timeline({ issueRef, issueId, editable, memberIds }: { issueRef: string; issueId: string; editable: boolean; memberIds?: string[] }) {
+function Timeline({ issueRef, issueId, editable, owner, memberIds }: { issueRef: string; issueId: string; editable: boolean; owner: boolean; memberIds?: string[] }) {
   const { t, fmt } = useI18n()
   const me = useMe()
   const qc = useQueryClient()
@@ -782,7 +789,14 @@ function Timeline({ issueRef, issueId, editable, memberIds }: { issueRef: string
                   )}
                 </div>
                 {it.comment.deletedAt ? (
-                  <div className="text-xs text-fg-4 italic">{t('comments.deleted')}</div>
+                  <div className="flex items-center gap-2 text-xs text-fg-4 italic">
+                    {t('comments.deleted')}
+                    {(it.comment.authorId === me.id || owner) && (
+                      <button className="min-h-8 px-1 not-italic text-accent-text hover:underline" onClick={() => api(`/api/issues/${issueRef}/comments/${it.comment.id}/restore`, { method: 'POST' }).then(refresh, (e) => toastError(e))}>
+                        {t('trash.restore')}
+                      </button>
+                    )}
+                  </div>
                 ) : editingId === it.comment.id ? (
                   <Composer
                     autoFocus
@@ -849,6 +863,7 @@ function useChangeText() {
   return (c: { action: string; data: Record<string, unknown> }) => {
     if (c.action === 'created') return t('change.created')
     if (c.action === 'deleted') return t('change.deleted')
+    if (c.action === 'restored') return t('change.restored')
     if (c.action === 'referenced') return t('change.referenced')
     if (c.action === 'related') return t('change.related', { type: t(`pm.rel.${c.data.type as 'relates'}` as MsgKey), target: String(c.data.target ?? '') })
     const f = String(c.data.field ?? '')
