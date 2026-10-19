@@ -686,4 +686,13 @@ export const zh = {
   'keys.copy': "複製",
   'activity.api_key.created': "{actor} 產生了 API Key「{name}」",
   'activity.api_key.revoked': "{actor} 撤銷了 API Key「{name}」",
+  'notice.issue_assigned': "{actor} 把 {ref}「{title}」指派給你",
+  'notice.issue_status': "{actor} 把 {ref} 改為{to}",
+  'notice.issue_comment': "{actor} 在 {ref} 留言",
+  'notice.mention': "{actor} 在「{title}」提到了你",
+  'notice.note_comment': "{actor} 在會議紀錄「{title}」加了註解",
+  'notice.note_reply': "{actor} 回覆了你在「{title}」的註解",
+  'notice.submission_result': "「{title}」的評測結果：{status}",
+  'notice.readAll': "全部已讀",
+  'notice.empty': "沒有新通知",
 } as const

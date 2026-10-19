@@ -687,4 +687,13 @@ export const en: Record<keyof typeof zh, string> = {
   'keys.copy': "Copy",
   'activity.api_key.created': "{actor} created API key “{name}”",
   'activity.api_key.revoked': "{actor} revoked API key “{name}”",
+  'notice.issue_assigned': "{actor} assigned {ref} “{title}” to you",
+  'notice.issue_status': "{actor} moved {ref} to {to}",
+  'notice.issue_comment': "{actor} commented on {ref}",
+  'notice.mention': "{actor} mentioned you in “{title}”",
+  'notice.note_comment': "{actor} commented on “{title}”",
+  'notice.note_reply': "{actor} replied to your comment on “{title}”",
+  'notice.submission_result': "Result for “{title}”: {status}",
+  'notice.readAll': "Mark all read",
+  'notice.empty': "You're all caught up",
 }

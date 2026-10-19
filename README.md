@@ -44,7 +44,13 @@ npm run dev
 
 評測 workflow 在本 repo（公開 repo 的代管 runner 免費、分鐘數不限）。建立一個 fine-grained token，只給本 repo 的 **Actions: Read and write**，存成 Worker 秘密 `GITHUB_TOKEN`。詳見 [`design/02-architecture.md`](design/02-architecture.md) §6 與 [`.github/workflows/grade.yml`](.github/workflows/grade.yml)。
 
-本機測試時 `.dev.vars` 設 `GRADER_MODE=local`，評測改由本機 Docker 執行。
+本機測試時 `.dev.vars` 設 `GRADER_MODE=local`，再另開一個終端機啟動本機評測器（用 Docker 隔離執行）：
+
+```bash
+node scripts/grade.mjs --local --site http://localhost:5173
+```
+
+沒有 Docker 時可加 `--no-docker` 改用本機 Python 執行（只供開發測試，沒有隔離，不要拿來跑別人的程式）。
 
 ## 用 MCP 連接 AI 工具
 

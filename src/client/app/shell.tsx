@@ -24,6 +24,7 @@ import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } fr
 import { Kbd } from '../ui/misc'
 import { Tooltip } from '../ui/tooltip'
 import { CommandPalette, ShortcutHelp, openPalette } from './palette'
+import { NotificationBell } from './notifications'
 import { PrefsSync } from './prefs-sync'
 
 type NavItem = { to: string; key: MsgKey; icon: ReactNode; admin?: boolean; exact?: boolean }
@@ -97,6 +98,9 @@ export function AppShell() {
             </button>
           </Tooltip>
         </div>
+        <div className="px-3 pb-1">
+          <NotificationBell compact={collapsed} />
+        </div>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
           {nav.map((n) => {
             const active = isActive(n)
@@ -144,6 +148,7 @@ export function AppShell() {
             <span className="text-[15px] font-bold tracking-tight">{t('app.name')}</span>
           </div>
           <IconButton label={t('nav.commandHint')} icon={<Search />} onClick={openPalette} />
+          <NotificationBell compact />
           <AccountMenu collapsed />
         </header>
 

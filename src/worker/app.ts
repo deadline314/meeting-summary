@@ -18,6 +18,7 @@ import { projectRoutes } from './routes/projects'
 import { sweepStuckJobs } from './services/grader'
 import { KEY_PREFIX, authenticateKey } from './services/api-keys'
 import { mcpRoutes } from './routes/mcp'
+import { notificationRoutes } from './routes/notifications'
 import { SESSION_COOKIE, SESSION_TTL_MS, resolveSession } from './services/auth'
 
 export const app = new Hono<AppEnv>()
@@ -97,6 +98,7 @@ app.route('/api', taskRoutes)
 app.route('/api', projectRoutes)
 app.route('/api/grader', graderRoutes)
 app.route('/mcp', mcpRoutes)
+app.route('/api', notificationRoutes)
 app.route('/files', rawFileRoute)
 app.get('/ws/doc/:id', noteSocket)
 

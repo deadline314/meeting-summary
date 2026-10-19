@@ -121,5 +121,16 @@ test('projects: create, members, issues, list, board, detail', async ({ page, br
   await page.goto('/projects')
   await expect(page.getByText('訓練 baseline 模型')).toBeVisible()
   await shot(page, info, 'MS-39', 'my-issues')
+
+  // Notifications: Alice assigns Bob; Bob's bell shows it and opens the issue.
+  const i3 = await (await page.request.get(`/api/issues/${key}-3`)).json()
+  await page.request.patch(`/api/issues/${key}-3`, { data: { version: i3.issue.version, assigneeIds: [bob.user.id] } })
+  await bob.page.goto('/')
+  await expect(bob.page.getByRole('button', { name: '通知' }).first()).toContainText('1')
+  await bob.page.getByRole('button', { name: '通知' }).first().click()
+  await expect(bob.page.getByText(/指派給你/)).toBeVisible()
+  await shot(bob.page, info, 'MS-41', 'bell')
+  await bob.page.getByText(/指派給你/).click()
+  await bob.page.waitForURL(new RegExp(`/projects/${key}/${key}-3$`))
   await bob.ctx.close()
 })
