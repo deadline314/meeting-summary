@@ -18,7 +18,7 @@ GitHub Actions 回報 ───┤
                        │
          ┌─────────────┼──────────────┐
          ▼             ▼              ▼
-        D1           R2          GitHub Actions（私有 runner repo）
+        D1           R2          GitHub Actions（本公開 repo）
    （關聯資料）  （圖片、附件、   （跑評測，結果用 OIDC 簽章回報）
                  提交、評測程式）
 ```
@@ -73,22 +73,28 @@ GitHub Actions 回報 ───┤
 
 ## 6. 任務評測（GitHub Actions）
 
+> 2026-10-19 更新：本 repo 是公開 repo。公開 repo 使用 GitHub 代管 runner 的分鐘數不限、免費，所以評測 workflow 直接放在本 repo。代價是 Actions log、workflow 輸入、artifact 任何人都看得到，下面的流程以「log 裡沒有任何學生資料或秘密」為前提設計。
+
 ```
 學生提交 → Worker 存 R2、建立評測工作（排隊中）
-        → 呼叫 GitHub workflow_dispatch（帶工作 id 與 30 分鐘有效的下載網址）
-GitHub Actions
-  job run（無任何權限、無秘密）：下載評測程式與提交 → 在 container 內以 --network none、
-          CPU／記憶體／時間上限執行 → 評測程式輸出 result.json → 存成 artifact
-  job report（只有 id-token 權限）：讀 artifact → 帶 GitHub OIDC token POST 回 Worker
-Worker 驗 OIDC（發行者、repo、workflow 都要對）→ 寫入結果、通知學生
+        → 呼叫 GitHub workflow_dispatch，輸入只有「工作 id」（公開可見，無害）
+GitHub Actions（單一 job，permissions 只有 id-token: write）
+  1. 向 GitHub 取 OIDC token，帶著它向 Worker 領取工作：Worker 驗 token 的 repo、workflow、
+     run id 後，回傳評測程式與提交的下載內容（不經過 workflow 輸入，不會出現在 log）
+  2. 在 container 內以 --network none、CPU／記憶體／時間上限執行評測；
+     container 不帶任何環境變數，學生程式拿不到 OIDC token
+  3. 評測輸出 result.json 與執行紀錄寫在 runner 暫存檔，不印到 log、不上傳 artifact
+  4. 帶 OIDC token 把結果 POST 回 Worker
+Worker 驗 OIDC（發行者、repo、workflow、工作 id 與 run 對得上）→ 寫入結果、通知學生
 Cron：超過時限仍未回報的工作標為「逾時」並寫明原因
 ```
 
-- 學生程式跑在沒有秘密、沒有網路的 container，拿不到 OIDC token，無法偽造結果。
+- 學生程式跑在沒有秘密、沒有網路的 container，無法偽造結果，也無法把資料送出去。
 - 評測程式的輸出合約：`{ passed, score, message, details[] }`；沒通過一定要有 `message` 說明原因。
-- runner repo 必須是私有：公開 repo 的 Actions log 任何人都看得到。私有 repo 每月 2000 分鐘免費。
-- **未來訓練模型**：同一份 workflow 把 `runs-on` 換成實驗室 GPU 機器的 self-hosted runner 即可，不用改平台。
-- 每位學生每個任務每日提交次數有上限（任務設定），避免耗光額度。
+- 公開 log 只會出現「工作 id、開始、結束、耗時」；workflow 每一步都把輸出導到檔案，不 echo 任何內容。
+- 本機開發不需要 GitHub：提供本機評測模式，由 Worker 以 `runner` 指令在本機 Docker 跑同一套流程，方便測試。
+- **未來訓練模型**：同一份 workflow 把 `runs-on` 換成實驗室 GPU 機器的 self-hosted runner 即可，不用改平台。self-hosted runner 不要接公開 repo 的 fork PR（GitHub 預設不會），以免外人程式跑在實驗室機器上。
+- 每位學生每個任務每日提交次數有上限（任務設定），避免排隊塞車。
 
 ## 7. MCP 與 API Key
 
@@ -122,7 +128,7 @@ Cron：超過時限仍未回報的工作標為「逾時」並寫明原因
 | Durable Objects（SQLite） | 每日 10 萬請求 | 即時協作 |
 | D1 | 5 GB、每日 500 萬列讀取 | 全部關聯資料 |
 | R2 | 10 GB、零流出費 | 圖片、附件、提交 |
-| GitHub Actions（私有 repo） | 每月 2000 分鐘 | 評測 |
+| GitHub Actions（公開 repo） | 代管 runner 分鐘數不限 | 評測 |
 
 **何時要付費**：Workers 免費方案每次請求 CPU 上限 10ms；若評測回報、批次操作等出現 CPU 超限，升級 Workers Paid（每月 5 美元）。後台用量頁會顯示接近上限的項目。
 

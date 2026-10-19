@@ -1,7 +1,7 @@
 # 待確認問題
 
 已決定（2026-10-19 使用者回覆）：
-- 評測執行：GitHub Actions（私有 runner repo）；未來訓練改接 self-hosted GPU runner。
+- 評測執行：GitHub Actions，workflow 放在本公開 repo（代管 runner 分鐘數不限）；未來訓練改接 self-hosted GPU runner。
 - 會議紀錄：即時多人協作。
 - 登入：任何 Google 帳號。
 - 進行方式：先寫設計文件與開票，再逐張實作。
