@@ -16,6 +16,8 @@ import { noteRoutes, noteSocket } from './routes/notes'
 import { graderRoutes, taskRoutes } from './routes/tasks'
 import { projectRoutes } from './routes/projects'
 import { sweepStuckJobs } from './services/grader'
+import { KEY_PREFIX, authenticateKey } from './services/api-keys'
+import { mcpRoutes } from './routes/mcp'
 import { SESSION_COOKIE, SESSION_TTL_MS, resolveSession } from './services/auth'
 
 export const app = new Hono<AppEnv>()
@@ -33,8 +35,17 @@ app.use('*', async (c, next) => {
   else log('info', 'request', { requestId, method: c.req.method, path: c.req.path, status: c.res.status, ms: Date.now() - started })
 })
 
-// Session cookie → user. Unknown/expired cookies are ignored (the route decides if auth is required).
+// API key (Bearer msk_…) or session cookie → user. Unknown/expired credentials are ignored (routes decide).
 app.use('*', async (c, next) => {
+  const bearer = c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
+  if (bearer?.startsWith(KEY_PREFIX) && !c.req.path.startsWith('/mcp')) {
+    const auth = await authenticateKey(c.get('db'), bearer, (p) => c.executionCtx.waitUntil(p))
+    if (auth) {
+      c.set('user', auth.user)
+      c.set('apiKey', auth.grant)
+    }
+    return next()
+  }
   const token = getCookie(c, SESSION_COOKIE)
   if (token) {
     const r = await resolveSession(c.get('db'), token)
@@ -85,6 +96,7 @@ app.route('/api', fileRoutes)
 app.route('/api', taskRoutes)
 app.route('/api', projectRoutes)
 app.route('/api/grader', graderRoutes)
+app.route('/mcp', mcpRoutes)
 app.route('/files', rawFileRoute)
 app.get('/ws/doc/:id', noteSocket)
 

@@ -7,6 +7,7 @@ import { body, ctxOf, isAdmin } from '../context'
 import { sessions, users } from '../db/schema'
 import { notFound } from '../lib/errors'
 import { LAST_LOGIN_COOKIE, revokeOtherSessions } from '../services/auth'
+import { createApiKey, listApiKeys, revokeApiKey } from '../services/api-keys'
 import { directory, hasAdminKey, redeemAdminKey, rotateAdminKey, updateMe, userDto } from '../services/users'
 import { devLoginEnabled } from './auth'
 
@@ -84,3 +85,23 @@ meRoutes.get('/admin/admin-key', async (c) => {
 })
 
 meRoutes.post('/admin/admin-key/rotate', async (c) => c.json({ key: await rotateAdminKey(ctxOf(c)) }))
+
+meRoutes.get('/me/api-keys', async (c) => c.json({ items: await listApiKeys(ctxOf(c)) }))
+
+meRoutes.post('/me/api-keys', async (c) => {
+  const input = await body(
+    c,
+    z.object({
+      name: z.string().trim().min(1).max(60),
+      scope: z.enum(['read', 'write', 'manage']),
+      projectIds: z.array(z.string()).max(50).nullable().optional(),
+      expiresAt: z.number().int().nullable().optional(),
+    }),
+  )
+  return c.json(await createApiKey(ctxOf(c), input), 201)
+})
+
+meRoutes.delete('/me/api-keys/:id', async (c) => {
+  await revokeApiKey(ctxOf(c), c.req.param('id'))
+  return c.json({ ok: true })
+})

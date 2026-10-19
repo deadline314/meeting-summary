@@ -45,3 +45,13 @@ npm run dev
 評測 workflow 在本 repo（公開 repo 的代管 runner 免費、分鐘數不限）。建立一個 fine-grained token，只給本 repo 的 **Actions: Read and write**，存成 Worker 秘密 `GITHUB_TOKEN`。詳見 [`design/02-architecture.md`](design/02-architecture.md) §6 與 [`.github/workflows/grade.yml`](.github/workflows/grade.yml)。
 
 本機測試時 `.dev.vars` 設 `GRADER_MODE=local`，評測改由本機 Docker 執行。
+
+## 用 MCP 連接 AI 工具
+
+到「設定 → API Key」產生金鑰，頁面會給一行指令，例如：
+
+```bash
+claude mcp add --transport http lab-notes https://<你的網域>/mcp --header "Authorization: Bearer msk_…"
+```
+
+只能填網址的客戶端用 `https://<你的網域>/mcp/k/msk_…`（網址含金鑰，勿分享）。權限與網頁完全相同；唯讀金鑰只能查詢，管理權限才能建立專案。

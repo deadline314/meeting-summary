@@ -98,3 +98,30 @@ test('sign-in, welcome, home, settings, admin', async ({ page }, info) => {
   await expect(page.getByText(/改成「/).first()).toBeVisible()
   await shot(page, info, 'MS-44', 'activity')
 })
+
+test('API keys: create, copy one-line MCP command, use it, revoke', async ({ page }, info) => {
+  const tag = info.project.name
+  await page.request.post('/auth/dev', { data: { email: email(`keys-${tag}`), name: '金鑰測試' } })
+  await page.request.patch('/api/me', { data: { onboarded: true } })
+  await page.goto('/settings?tab=api')
+  await page.getByRole('button', { name: '產生 API Key' }).click()
+  await page.getByLabel('名稱').fill('我的筆電 Claude Code')
+  await shot(page, info, 'MS-42', 'create')
+  await page.getByRole('dialog').getByRole('button', { name: '建立' }).click()
+  await expect(page.getByText('這把金鑰只會顯示這一次')).toBeVisible()
+  const cli = await page.locator('code', { hasText: 'claude mcp add' }).innerText()
+  expect(cli).toMatch(/claude mcp add --transport http lab-notes http:\/\/localhost:5174\/mcp --header "Authorization: Bearer msk_/)
+  await shot(page, info, 'MS-42', 'created')
+  const secret = /Bearer (msk_[\w-]+)/.exec(cli)![1]!
+  // The key works against the MCP endpoint.
+  const r = await page.request.post('/mcp', { headers: { authorization: `Bearer ${secret}` }, data: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })
+  expect(r.ok()).toBe(true)
+  await page.getByRole('button', { name: '完成' }).click()
+  await expect(page.getByText('我的筆電 Claude Code')).toBeVisible()
+  await shot(page, info, 'MS-42', 'list')
+  await page.getByRole('button', { name: '撤銷' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '撤銷' }).click()
+  await expect(page.getByText('已撤銷')).toBeVisible()
+  const after = await page.request.post('/mcp', { headers: { authorization: `Bearer ${secret}` }, data: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })
+  expect(after.status()).toBe(401)
+})
