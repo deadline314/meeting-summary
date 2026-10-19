@@ -915,4 +915,9 @@ export const zh = {
   'trash.restore': "還原",
   'trash.restored': "已還原 {ref}",
   'change.restored': "還原了這張議題",
+  'pm.allIssues': "所有議題",
+  'pm.allIssuesHint': "你看得到的所有專案，可用 / 搜尋編號或關鍵字",
+  'pm.scope.mine': "指派給我",
+  'pm.scope.all': "所有專案",
+  'tasks.regradeConfirmEst': "所有 {n} 份提交會重新評測（預估約 {minutes} 分鐘 GitHub Actions 時間），並需要重新試跑。",
 } as const

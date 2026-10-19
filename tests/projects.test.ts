@@ -230,4 +230,21 @@ describe('projects & issues', () => {
     expect([p1.status, p2.status]).toEqual([200, 200])
     expect(p2.body.issue.version).toBe(p1.body.issue.version)
   })
+  it('cross-project search finds issues by key or words, only in visible projects, with right counts', async () => {
+    const { a, k } = await setup()
+    const k2 = projectKey('X')
+    await a.call('/api/projects', { method: 'POST', body: { key: k2, name: 'two' } })
+    const tag = crypto.randomUUID().slice(0, 6)
+    for (let n = 0; n < 3; n++) await a.call(`/api/projects/${k}/issues`, { method: 'POST', body: { title: `alpha ${tag} ${n}` } })
+    await a.call(`/api/projects/${k2}/issues`, { method: 'POST', body: { title: `alpha ${tag} other` } })
+    const r = (await a.call<{ items: { ref: string }[]; total: number }>(`/api/issues?q=${tag}&status=todo&limit=2`)).body
+    expect([r.total, r.items.length]).toEqual([4, 2])
+    const byKey = (await a.call<{ items: { ref: string }[] }>(`/api/issues?q=${k2}-1&status=todo`)).body.items.map((x) => x.ref)
+    expect(byKey).toEqual([`${k2}-1`])
+    const counts = (await a.call<Record<string, number>>(`/api/issues-counts?q=${tag}&project=${k}`)).body
+    expect(counts.todo).toBe(3)
+    // Someone else sees none of it.
+    const b = await login(uniq('xs'))
+    expect((await b.call<{ total: number }>(`/api/issues?q=${tag}&status=todo`)).body.total).toBe(0)
+  })
 })

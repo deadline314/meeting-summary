@@ -106,14 +106,15 @@ function Overview({ task }: { task: Task }) {
 function SubmitTab({ task }: { task: Task }) {
   const { t } = useI18n()
   const qc = useQueryClient()
-  const subs = useSubmissions(task.id, { trial: false })
+  const [subLimit, setSubLimit] = useState(50)
+  const subs = useSubmissions(task.id, { trial: false, limit: subLimit })
   const [mode, setMode] = useState<'file' | 'code'>(task.submitKind)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const now = useNow(60_000)
-  const today = (subs.data ?? []).filter((s) => s.createdAt > now - 86400_000).length
+  const today = (subs.data?.items ?? []).filter((s) => s.createdAt > now - 86400_000).length
   const left = Math.max(0, task.dailyLimit - today)
   const send = async (file: File) => {
     setBusy(true)
@@ -191,7 +192,12 @@ function SubmitTab({ task }: { task: Task }) {
           </>
         )}
       </Card>
-      <History subs={subs.data} loading={subs.isPending} higherIsBetter={task.higherIsBetter} />
+      <History subs={subs.data?.items} loading={subs.isPending} higherIsBetter={task.higherIsBetter} />
+      {subs.data && subs.data.total > subs.data.items.length && (
+        <Button className="self-center" onClick={() => setSubLimit((n) => n + 50)}>
+          {t('common.loadMore')}
+        </Button>
+      )}
     </div>
   )
 }
@@ -318,10 +324,16 @@ type LbRow = { rank: number; userId: string; score: number | null; createdAt: nu
 function Leaderboard({ task }: { task: Task }) {
   const { t, fmt } = useI18n()
   const me = useMe()
-  const q = useQuery({ queryKey: ['leaderboard', task.id], queryFn: async () => (await api<{ items: LbRow[] }>(`/api/tasks/${task.id}/leaderboard`)).items, refetchInterval: 15_000 })
+  const [limit, setLimit] = useState(50)
+  const q = useQuery({
+    queryKey: ['leaderboard', task.id, limit],
+    queryFn: () => api<{ items: LbRow[]; total: number; mine: LbRow | null }>(`/api/tasks/${task.id}/leaderboard?limit=${limit}`),
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  })
   if (!task.leaderboard && !task.canManage) return <EmptyState title={t('tasks.lb.off')} />
   if (q.isPending) return <Skeleton className="h-48" />
-  if (!q.data?.length)
+  if (!q.data?.items.length)
     return (
       <Card>
         <EmptyState icon={<Trophy />} title={t('tasks.lb.empty')} />
@@ -340,7 +352,7 @@ function Leaderboard({ task }: { task: Task }) {
           </tr>
         </thead>
         <tbody>
-          {q.data.map((r, i) => (
+          {[...q.data.items, ...(q.data.mine && !q.data.items.some((r) => r.userId === me.id) ? [q.data.mine] : [])].map((r, i) => (
             <motion.tr key={r.userId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }} className={cx('border-b border-line last:border-0', r.userId === me.id && 'bg-accent-soft')}>
               <td className="px-4 py-2.5">
                 <span className={cx('inline-flex size-7 items-center justify-center rounded-full text-xs font-bold', r.rank === 1 ? 'bg-warning-soft text-warning' : r.rank <= 3 ? 'bg-surface-3 text-fg-2' : 'text-fg-4')}>{r.rank}</span>
@@ -359,6 +371,11 @@ function Leaderboard({ task }: { task: Task }) {
           ))}
         </tbody>
       </table>
+      {q.data.total > q.data.items.length && (
+        <button className="w-full border-t border-line py-2.5 text-xs text-accent-text hover:bg-surface-2" onClick={() => setLimit((n) => n + 50)}>
+          {t('common.loadMore')}（{q.data.items.length}／{q.data.total}）
+        </button>
+      )}
     </Card>
   )
 }
@@ -369,7 +386,8 @@ function Manage({ task }: { task: Task }) {
   const { t } = useI18n()
   const msg = useResultMessage()
   const overview = useQuery({ queryKey: ['task-overview', task.id], queryFn: () => api<Overview>(`/api/tasks/${task.id}/overview`) })
-  const all = useSubmissions(task.id, { all: true, trial: false })
+  const [allLimit, setAllLimit] = useState(50)
+  const all = useSubmissions(task.id, { all: true, trial: false, limit: allLimit })
   const [view, setView] = useState<'users' | 'all'>('users')
   const maxReason = useMemo(() => Math.max(1, ...(overview.data?.reasons.map((r) => r.count) ?? [1])), [overview.data])
   return (
@@ -433,8 +451,13 @@ function Manage({ task }: { task: Task }) {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {all.data?.map((s) => <SubmissionCard key={s.id} s={s} showUser />)}
-          {all.data && !all.data.length && <EmptyState title={t('tasks.historyEmpty')} />}
+          {all.data?.items.map((s) => <SubmissionCard key={s.id} s={s} showUser />)}
+          {all.data && !all.data.items.length && <EmptyState title={t('tasks.historyEmpty')} />}
+          {all.data && all.data.total > all.data.items.length && (
+            <Button className="self-center" onClick={() => setAllLimit((n) => n + 50)}>
+              {t('common.loadMore')}
+            </Button>
+          )}
         </div>
       )}
     </div>

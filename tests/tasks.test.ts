@@ -65,6 +65,12 @@ describe('tasks & grading', () => {
 
     const lb = await a.call<{ items: { rank: number; score: number }[] }>(`/api/tasks/${task.id}/leaderboard`)
     expect(lb.body.items.map((x) => x.score)).toEqual([0.95, 0.9])
+    // Paged: one row per page, total and the caller's own row come along.
+    const page = await a.call<{ items: { score: number }[]; total: number; mine: { rank: number } | null }>(`/api/tasks/${task.id}/leaderboard?limit=1&offset=1`)
+    expect([page.body.items.length, page.body.total, page.body.items[0]!.score]).toEqual([1, 2, 0.9])
+    expect(page.body.mine?.rank).toBeGreaterThan(0)
+    const one = await a.call<{ items: unknown[]; total: number }>(`/api/tasks/${task.id}/submissions?limit=1`)
+    expect([one.body.items.length, one.body.total]).toEqual([1, 2])
     // B cannot see A's submissions.
     expect((await b.call<{ items: unknown[] }>(`/api/tasks/${task.id}/submissions`)).body.items).toHaveLength(1)
   })

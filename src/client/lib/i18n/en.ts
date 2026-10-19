@@ -916,4 +916,9 @@ export const en: Record<keyof typeof zh, string> = {
   'trash.restore': "Restore",
   'trash.restored': "Restored {ref}",
   'change.restored': "restored this issue",
+  'pm.allIssues': "All issues",
+  'pm.allIssuesHint': "Every project you can see — press / to search by key or words",
+  'pm.scope.mine': "Assigned to me",
+  'pm.scope.all': "All projects",
+  'tasks.regradeConfirmEst': "All {n} submissions will be graded again (about {minutes} min of GitHub Actions), and the trial run must pass again.",
 }

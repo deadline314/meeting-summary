@@ -182,7 +182,12 @@ export function TaskSettings({ task }: { task: Task }) {
               icon={<RotateCcw className="size-4" />}
               disabled={busy}
               onClick={async () => {
-                if (await confirm({ title: t('tasks.regrade'), body: t('tasks.regradeConfirm', { n: graded.data?.length ?? 0 }) })) save({ regradeAll: true })
+                // Estimate from past runs (average duration), capped by the time limit.
+                const runs = (graded.data?.items ?? []).filter((s) => s.startedAt && s.finishedAt)
+                const avg = runs.length ? runs.reduce((a, s) => a + (s.finishedAt! - s.startedAt!), 0) / runs.length : task.timeoutSec * 500
+                const n = graded.data?.total ?? 0
+                const minutes = Math.max(1, Math.round((n * avg) / 60_000))
+                if (await confirm({ title: t('tasks.regrade'), body: t('tasks.regradeConfirmEst', { n, minutes }) })) save({ regradeAll: true })
               }}
             >
               {t('tasks.regrade')}
@@ -258,7 +263,7 @@ function PublishPanel({ task, busy, dirty, onPublish }: { task: Task; busy: bool
   const trials = useSubmissions(task.id, { all: true, trial: true })
   const input = useRef<HTMLInputElement>(null)
   const [sending, setSending] = useState(false)
-  const latest = trials.data?.[0]
+  const latest = trials.data?.items[0]
   // When the latest trial passes, refresh the task so "Publish" unlocks.
   const passed = latest?.status === 'passed' && !task.trialPassedAt
   useEffect(() => {

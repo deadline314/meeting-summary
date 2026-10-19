@@ -69,12 +69,15 @@ taskRoutes.post('/tasks/:id/submissions', async (c) => {
 })
 
 taskRoutes.get('/tasks/:id/submissions', async (c) => {
-  const q = parse(z.object({ all: z.coerce.boolean().optional(), trial: z.enum(['0', '1']).optional() }), c.req.query())
-  const r = await listSubmissions(ctxOf(c), c.req.param('id'), { all: !!q.all, trial: q.trial === undefined ? undefined : q.trial === '1' })
-  return c.json({ items: r.items })
+  const q = parse(z.object({ all: z.coerce.boolean().optional(), trial: z.enum(['0', '1']).optional(), limit: z.coerce.number().int().min(1).max(500).default(50) }), c.req.query())
+  const r = await listSubmissions(ctxOf(c), c.req.param('id'), { all: !!q.all, trial: q.trial === undefined ? undefined : q.trial === '1', limit: q.limit })
+  return c.json({ items: r.items, total: r.total })
 })
 
-taskRoutes.get('/tasks/:id/leaderboard', async (c) => c.json({ items: await leaderboard(ctxOf(c), c.req.param('id')) }))
+taskRoutes.get('/tasks/:id/leaderboard', async (c) => {
+  const page = parse(z.object({ offset: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(200).default(50) }), c.req.query())
+  return c.json(await leaderboard(ctxOf(c), c.req.param('id'), page))
+})
 taskRoutes.get('/tasks/:id/overview', async (c) => c.json(await taskOverview(ctxOf(c), c.req.param('id'))))
 
 /** CSV of every student's best result (admin). */

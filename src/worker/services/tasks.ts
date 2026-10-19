@@ -218,26 +218,22 @@ export async function submit(ctx: Ctx, taskId: string, o: { name: string; mime: 
   return (await ctx.db.select().from(submissions).where(eq(submissions.id, id)).get())!
 }
 
-export async function listSubmissions(ctx: Ctx, taskId: string, o: { all: boolean; trial?: boolean }) {
+export async function listSubmissions(ctx: Ctx, taskId: string, o: { all: boolean; trial?: boolean; limit?: number }) {
   const t = await getTask(ctx, taskId)
   if (o.all) requireAdmin(ctx)
-  const rows = await ctx.db
-    .select()
-    .from(submissions)
-    .where(
-      and(
-        eq(submissions.taskId, taskId),
-        o.all ? undefined : eq(submissions.userId, ctx.user.id),
-        o.trial === undefined ? undefined : eq(submissions.isTrial, o.trial),
-      ),
-    )
-    .orderBy(desc(submissions.createdAt))
-    .limit(500)
-    .all()
-  return { task: t, items: rows }
+  const where = and(
+    eq(submissions.taskId, taskId),
+    o.all ? undefined : eq(submissions.userId, ctx.user.id),
+    o.trial === undefined ? undefined : eq(submissions.isTrial, o.trial),
+  )
+  const [rows, total] = await Promise.all([
+    ctx.db.select().from(submissions).where(where).orderBy(desc(submissions.createdAt)).limit(o.limit ?? 50).all(),
+    ctx.db.select({ n: sql<number>`count(*)` }).from(submissions).where(where).get(),
+  ])
+  return { task: t, items: rows, total: total?.n ?? 0 }
 }
 
-export async function leaderboard(ctx: Ctx, taskId: string) {
+export async function leaderboard(ctx: Ctx, taskId: string, page: { offset: number; limit: number } = { offset: 0, limit: 50 }) {
   const t = await getTask(ctx, taskId)
   if (!t.leaderboard && !isAdmin(ctx.user)) throw notFound()
   const rows = await ctx.db
@@ -252,7 +248,9 @@ export async function leaderboard(ctx: Ctx, taskId: string) {
     const d = (b.score ?? -Infinity) - (a.score ?? -Infinity)
     return (t.higherIsBetter ? d : -d) || a.createdAt - b.createdAt
   })
-  return entries.map((e, i) => ({ rank: i + 1, ...e }))
+  const ranked = entries.map((e, i) => ({ rank: i + 1, ...e }))
+  // One page, plus the caller's own row so it can be pinned when it falls outside the page.
+  return { items: ranked.slice(page.offset, page.offset + page.limit), total: ranked.length, mine: ranked.find((r) => r.userId === ctx.user.id) ?? null }
 }
 
 /** Admin overview: per-student best, failure reasons, who hasn't submitted. */

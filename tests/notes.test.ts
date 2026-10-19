@@ -153,4 +153,43 @@ describe('meeting notes', () => {
     expect(r.body.comment.resolvedAt).toBeTruthy()
     expect((await a.call('/api/notes/does-not-exist/comments')).status).toBe(404)
   })
+  it('note comments notify the creator, the recorder and anyone @-mentioned (not the author)', async () => {
+    const a = await login(uniq('nc'))
+    const rec = await login(uniq('nr'))
+    const m = await login(uniq('nm'))
+    const c = await login(uniq('nx'))
+    const id = async (x: typeof a) => (await x.call<{ user: { id: string } }>('/api/me')).body.user.id
+    const [recId, mId] = [await id(rec), await id(m)]
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'N', startsAt: Date.now(), recorderId: recId } })).body
+    await c.call(`/api/notes/${note.id}/comments`, { method: 'POST', body: { body: `請 @[user:${mId}] 看一下`, anchor: { start: 'x', end: 'y' }, quote: 'q' } })
+    await new Promise((r) => setTimeout(r, 50))
+    const types = async (x: typeof a) => (await x.call<{ items: { type: string; entityId: string }[] }>('/api/notifications')).body.items.filter((n) => n.entityId === note.id).map((n) => n.type)
+    expect((await types(a)).length).toBe(1)
+    expect((await types(rec)).length).toBe(1)
+    expect(await types(m)).toContain('mention')
+    expect(await types(c)).toEqual([])
+  })
+
+  it('lists notes page by page with an exact total', async () => {
+    const a = await login(uniq('pg'))
+    const tag = `pg-${crypto.randomUUID().slice(0, 6)}`
+    for (let i = 0; i < 45; i++) await a.call('/api/notes', { method: 'POST', body: { title: `${tag} ${i}`, startsAt: Date.now() - i * 60_000 } })
+    const p0 = (await a.call<{ items: { title: string }[]; total: number }>(`/api/notes?q=${tag}&limit=20&offset=0`)).body
+    const p2 = (await a.call<{ items: { title: string }[]; total: number }>(`/api/notes?q=${tag}&limit=20&offset=40`)).body
+    expect([p0.total, p0.items.length, p2.items.length]).toEqual([45, 20, 5])
+    expect(p0.items[0]!.title).toBe(`${tag} 0`)
+  })
+  it('live edits reach the list and search at the next content sync', async () => {
+    const a = await login(uniq('sy'))
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'Search me', startsAt: Date.now() } })).body
+    const ca = await connect(a.cookie, note.id)
+    const word = `zx${crypto.randomUUID().slice(0, 6)}`
+    ca.text.insert(0, `${word} `)
+    await sleep(150)
+    // The room writes content to the database on a 20 s alarm (well inside the 30 s promise); fire it now.
+    await runDurableObjectAlarm(env.DOC_ROOM.get(env.DOC_ROOM.idFromName(note.id)))
+    const hits = (await a.call<{ items: { id: string }[] }>(`/api/notes?q=${word}&limit=5&offset=0`)).body.items
+    expect(hits.map((h) => h.id)).toEqual([note.id])
+    ca.ws.close()
+  })
 })

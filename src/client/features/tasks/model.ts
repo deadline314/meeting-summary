@@ -56,12 +56,14 @@ export function useTask(id: string) {
 }
 
 /** Polls every 2s while any submission is still being graded. */
-export function useSubmissions(taskId: string, o: { all?: boolean; trial?: boolean } = {}) {
-  const qs = new URLSearchParams({ ...(o.all && { all: '1' }), ...(o.trial !== undefined && { trial: o.trial ? '1' : '0' }) })
+/** Newest `limit` submissions plus the total (lists grow with "show more"). Polls while any is being graded. */
+export function useSubmissions(taskId: string, o: { all?: boolean; trial?: boolean; limit?: number } = {}) {
+  const qs = new URLSearchParams({ ...(o.all && { all: '1' }), ...(o.trial !== undefined && { trial: o.trial ? '1' : '0' }), limit: String(o.limit ?? 50) })
   return useQuery({
     queryKey: ['submissions', taskId, qs.toString()],
-    queryFn: async () => (await api<{ items: Submission[] }>(`/api/tasks/${taskId}/submissions?${qs}`)).items,
-    refetchInterval: (q) => (q.state.data?.some(pending) ? 2000 : false),
+    queryFn: () => api<{ items: Submission[]; total: number }>(`/api/tasks/${taskId}/submissions?${qs}`),
+    refetchInterval: (q) => (q.state.data?.items.some(pending) ? 2000 : false),
+    placeholderData: (prev) => prev,
   })
 }
 

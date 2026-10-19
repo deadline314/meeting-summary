@@ -77,6 +77,7 @@ export function appRoutes(parent: AnyRoute) {
     due: z.enum(['overdue', 'week', 'none']).optional(),
     statuses: z.string().optional(),
     project: z.string().optional(),
+    all: z.coerce.boolean().optional(),
     settings: z.enum(['general', 'members', 'labels', 'templates', 'lifecycle']).optional(),
   })
   const projects = createRoute({ getParentRoute: () => parent, path: '/projects', component: ProjectsLayout })

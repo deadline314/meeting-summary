@@ -39,7 +39,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as Y from 'yjs'
 import { useActions } from '../../lib/actions'
 import { api } from '../../lib/api'
-import { useIsMobile } from '../../lib/hooks'
+import { useIsMobile, useOnline } from '../../lib/hooks'
 import { useI18n } from '../../lib/i18n'
 import { useDirectory, useMe } from '../../lib/session'
 import { compressImage, uploadFile } from '../../lib/upload'
@@ -238,7 +238,30 @@ function NoteView({ note, search, setSearch }: { note: NoteDto; search: NoteSear
     { id: 'note-history', label: 'notes.panel.history', icon: <History />, run: () => openPanel('history') },
   ])
 
+  // A short reconnect blip shouldn't flash a banner; a real outage (> 2 s) should.
+  // The socket can look open for a while after the network drops, so the browser's own signal counts too.
+  const online = useOnline()
+  const [offline, setOffline] = useState(false)
+  useEffect(() => {
+    if (status === 'connected' && online) {
+      const t0 = setTimeout(() => setOffline(false), 0)
+      return () => clearTimeout(t0)
+    }
+    const t1 = setTimeout(() => setOffline(true), online ? 2000 : 0)
+    return () => clearTimeout(t1)
+  }, [status, online])
+
   const meta = (
+    <>
+    <AnimatePresence>
+      {offline && canEdit && (
+        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden bg-warning-soft text-warning" role="status">
+          <div className="flex items-center gap-2 px-4 py-1.5 text-xs font-medium md:px-5">
+            <WifiOff className="size-3.5" /> {t('notes.offlineEditing')}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
     <NoteHeader
       note={note}
       peers={peers.map((p) => p.id)}
@@ -256,6 +279,7 @@ function NoteView({ note, search, setSearch }: { note: NoteDto; search: NoteSear
         }
       }}
     />
+    </>
   )
 
   const toolbar = (

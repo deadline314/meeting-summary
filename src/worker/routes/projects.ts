@@ -187,6 +187,16 @@ projectRoutes.get('/timeline', async (c) => {
   const q = parse(filter.omit({ status: true, sort: true, offset: true, limit: true }).extend({ key: z.string().optional() }), c.req.query())
   return c.json(await issueTimeline(ctxOf(c), { key: q.key }, q))
 })
+// Every issue in the projects I can see (cross-project search); `project` narrows it to one.
+projectRoutes.get('/issues', async (c) => {
+  const { project, ...f } = parse(filter, c.req.query())
+  return c.json(await listIssues(ctxOf(c), { key: project }, f))
+})
+projectRoutes.get('/issues-counts', async (c) => {
+  const { status: _s, offset: _o, limit: _l, project, ...f } = parse(filter, c.req.query())
+  return c.json(await statusCounts(ctxOf(c), { key: project }, f))
+})
+
 // `project` narrows My issues to one project (still only issues assigned to me).
 projectRoutes.get('/my-issues', async (c) => {
   const { project, ...f } = parse(filter, c.req.query())

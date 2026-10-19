@@ -18,7 +18,7 @@ import { SaveViewButton, useViews } from './saved-views'
 import { ProjectStats } from './stats'
 import { IssueTimeline } from './timeline'
 
-export type ProjectSearch = Omit<Filters, 'due'> & { due?: 'overdue' | 'week' | 'none'; view?: 'list' | 'board' | 'timeline' | 'stats'; settings?: SettingsTab }
+export type ProjectSearch = Omit<Filters, 'due'> & { all?: boolean; due?: 'overdue' | 'week' | 'none'; view?: 'list' | 'board' | 'timeline' | 'stats'; settings?: SettingsTab }
 
 function Toolbar({
   search,
@@ -207,14 +207,23 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
   return (
     <div>
       <MobileProjectPicker />
-      <div className="flex items-center gap-3 px-4 pt-5 pb-3 md:px-6">
+      <div className="flex flex-wrap items-center gap-3 px-4 pt-5 pb-3 md:px-6">
         <span className="flex size-9 items-center justify-center rounded-xl bg-accent-soft text-accent-text">
           <Inbox className="size-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-bold tracking-tight md:text-xl">{t('pm.myIssues')}</h1>
-          <p className="text-xs text-fg-4">{t('pm.myIssuesHint')}</p>
+          <h1 className="text-lg font-bold tracking-tight md:text-xl">{search.all ? t('pm.allIssues') : t('pm.myIssues')}</h1>
+          <p className="text-xs text-fg-4">{search.all ? t('pm.allIssuesHint') : t('pm.myIssuesHint')}</p>
         </div>
+        <Segmented
+          className="max-md:order-last"
+          value={search.all ? 'all' : 'mine'}
+          onChange={(v) => setSearch({ all: v === 'all' ? true : undefined })}
+          options={[
+            { value: 'mine', label: t('pm.scope.mine') },
+            { value: 'all', label: t('pm.scope.all') },
+          ]}
+        />
         <SaveViewButton />
         <Button data-tour="pm-new" variant="primary" icon={<Plus className="size-4" />} onClick={() => openCreateIssue()} disabled={!projects.data?.some((p) => canWrite(p.role) && p.state === 'active')} title="C">
           {t('pm.new')}
@@ -234,7 +243,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
           }
         />
       ) : (
-        <ViewProvider scope={{ mine: true }} labels={[]}>
+        <ViewProvider key={search.all ? 'all' : 'mine'} scope={search.all ? {} : { mine: true }} labels={[]}>
           <IssueList filters={filters} empty={<EmptyState className="py-20" icon={<Inbox />} title={search.q || search.priority || search.due || search.statuses || search.project ? t('pm.emptyFiltered') : t('pm.emptyMine')} />} />
         </ViewProvider>
       )}

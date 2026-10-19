@@ -22,3 +22,11 @@ export function highlight(src: string, name: string) {
   const lang = BY_EXT[name.split('.').pop()?.toLowerCase() ?? '']
   return lang ? hljs.highlight(src, { language: lang }).value : hljs.highlightAuto(src).value
 }
+
+const ALIAS: Record<string, string> = { py: 'python', js: 'javascript', ts: 'typescript', sh: 'bash', shell: 'bash', yml: 'yaml', 'c++': 'cpp', c: 'cpp' }
+
+/** Fenced-code highlighting for rendered Markdown (` ```python `). Unknown languages are auto-detected. */
+export function highlightFence(src: string, lang: string | undefined) {
+  const l = lang && (ALIAS[lang] ?? lang)
+  return l && hljs.getLanguage(l) ? hljs.highlight(src, { language: l }).value : hljs.highlightAuto(src).value
+}

@@ -148,7 +148,15 @@ function issueWhere(ctx: Ctx, projectIds: string[], scope: { mine?: boolean }, f
     scope.mine ? sql`exists (select 1 from issue_assignees a where a.issue_id = ${issues.id} and a.user_id = ${ctx.user.id})` : undefined,
     f.assigneeId ? sql`exists (select 1 from issue_assignees a where a.issue_id = ${issues.id} and a.user_id = ${f.assigneeId})` : undefined,
     f.labelId ? sql`exists (select 1 from issue_labels l where l.issue_id = ${issues.id} and l.label_id = ${f.labelId})` : undefined,
-    f.q ? or(like(issues.title, `%${f.q}%`), like(issues.description, `%${f.q}%`)) : undefined,
+    // Words match title or description; "KEY-12" (or "12") also matches the issue number.
+    f.q
+      ? or(
+          like(issues.title, `%${f.q}%`),
+          like(issues.description, `%${f.q}%`),
+          sql`((select key from projects p where p.id = ${issues.projectId}) || '-' || ${issues.number}) = ${f.q.trim().toUpperCase()}`,
+          /^\d+$/.test(f.q.trim()) ? eq(issues.number, Number(f.q.trim())) : undefined,
+        )
+      : undefined,
     f.doneSince && f.status && DONE.includes(f.status) ? gt(issues.statusChangedAt, f.doneSince) : undefined,
     f.due === 'none' ? isNull(issues.dueAt) : undefined,
     f.due === 'overdue' ? and(lt(issues.dueAt, Date.now()), sql`${issues.status} not in ('done','canceled')`) : undefined,

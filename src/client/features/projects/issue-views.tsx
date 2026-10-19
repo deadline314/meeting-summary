@@ -24,11 +24,12 @@ import { IssueStatusIcon, PriorityIcon } from './icons'
 import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, readNav, rememberNav, useProjects, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
 import { LabelChip, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
+/** A project, my issues, or (neither) every project I can see. */
 export type Scope = { key?: string; mine?: boolean }
 export type Filters = { assigneeId?: string; priority?: string; labelId?: string; q?: string; sort?: string; due?: string; project?: string; statuses?: string }
 
 const PAGE = 50
-const base = (s: Scope) => (s.key ? `/api/projects/${s.key}` : '/api/my-issues')
+const base = (s: Scope) => (s.key ? `/api/projects/${s.key}` : s.mine ? '/api/my-issues' : '/api/issues')
 const qs = (f: Filters & Record<string, unknown>) =>
   new URLSearchParams(Object.entries(f).filter(([k, v]) => k !== 'statuses' && v !== undefined && v !== '' && v !== false) as [string, string][]).toString()
 /** Status groups to show (comma list in the URL); empty means all. */
@@ -38,7 +39,7 @@ const FOURTEEN_DAYS = 14 * 86400_000
 export function useCounts(scope: Scope, f: Filters) {
   return useQuery({
     queryKey: ['counts', scope, f],
-    queryFn: () => api<Record<Status, number>>(`${base(scope)}/counts?${qs(f)}`),
+    queryFn: () => api<Record<Status, number>>(`${scope.key || scope.mine ? `${base(scope)}/counts` : '/api/issues-counts'}?${qs(f)}`),
   })
 }
 

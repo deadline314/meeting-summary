@@ -99,7 +99,7 @@ function Members({ onOpen }: { onOpen(id: string): void }) {
         </Select>
         {q.data && <span className="self-center text-sm text-fg-4">{t('admin.memberCount', { n: q.data.total })}</span>}
       </div>
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden max-md:border-0 max-md:bg-transparent max-md:shadow-none">
         {q.isPending ? (
           <div className="flex flex-col gap-3 p-4">
             {Array.from({ length: 4 }, (_, i) => (
@@ -107,14 +107,14 @@ function Members({ onOpen }: { onOpen(id: string): void }) {
             ))}
           </div>
         ) : q.data?.items.length ? (
-          <ul className="divide-y divide-line">
+          <ul className="divide-y divide-line max-md:flex max-md:flex-col max-md:gap-2 max-md:divide-y-0">
             {q.data.items.map((u, i) => (
               <motion.li
                 key={u.id}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.02, 0.2) }}
-                className="flex items-center gap-3 px-4 py-3 max-md:py-3.5"
+                className="flex items-center gap-3 px-4 py-3 max-md:rounded-2xl max-md:border max-md:border-line max-md:bg-surface max-md:py-3.5 max-md:shadow-sm"
               >
                 <button onClick={() => onOpen(u.id)} aria-label={`${t('member.open')}：${u.name}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left">
                 <Avatar id={u.id} name={u.name} src={u.avatarUrl} size="md" />
@@ -125,6 +125,9 @@ function Members({ onOpen }: { onOpen(id: string): void }) {
                     {u.status === 'disabled' && <Badge tone="danger">{t('status.disabled')}</Badge>}
                   </div>
                   <div className="truncate text-xs text-fg-4">{u.email}</div>
+                  <div className="text-xs text-fg-4 sm:hidden">
+                    {t('admin.lastSeen')} {u.lastSeenAt ? fmt.relative(u.lastSeenAt) : t('admin.never')}
+                  </div>
                 </div>
                 <div className="hidden text-right text-xs text-fg-4 sm:block">
                   <div>

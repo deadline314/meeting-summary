@@ -167,6 +167,22 @@ export function Html({ html, className }: { html: string; className?: string }) 
     if (!el) return
     const found = [...el.querySelectorAll<HTMLElement>('span[data-ref]')].map((s) => ({ el: s, type: s.dataset.ref!, id: s.dataset.id! }))
     setSlots(found)
+    // Fenced code gets syntax colours; the highlighter loads only when a page has code.
+    const blocks = [...el.querySelectorAll<HTMLElement>('pre > code')]
+    if (!blocks.length) return
+    let live = true
+    import('../files/highlight').then(({ highlightFence }) => {
+      if (!live) return
+      for (const b of blocks) {
+        if (b.dataset.hl) continue
+        b.innerHTML = highlightFence(b.textContent ?? '', /language-([\w+-]+)/.exec(b.className)?.[1])
+        b.dataset.hl = '1'
+        b.classList.add('hljs')
+      }
+    })
+    return () => {
+      live = false
+    }
   }, [html])
   return (
     <>
