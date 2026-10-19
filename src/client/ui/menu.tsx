@@ -24,6 +24,7 @@ export function MenuContent({ children, align = 'end', className }: { children: 
 export function MenuItem({
   icon,
   children,
+  hint,
   shortcut,
   danger,
   checked,
@@ -32,6 +33,8 @@ export function MenuItem({
 }: {
   icon?: ReactNode
   children: ReactNode
+  /** Second line under the label (wraps). */
+  hint?: ReactNode
   shortcut?: string
   danger?: boolean
   checked?: boolean
@@ -39,9 +42,16 @@ export function MenuItem({
   disabled?: boolean
 }) {
   return (
-    <M.Item disabled={disabled} onSelect={onSelect} className={cx(item, danger && 'text-danger data-[highlighted]:text-danger [&_svg]:text-danger')}>
+    <M.Item disabled={disabled} onSelect={onSelect} className={cx(item, !!hint && 'h-auto min-h-9 py-1.5 max-md:h-auto', danger && 'text-danger data-[highlighted]:text-danger [&_svg]:text-danger')}>
       {icon}
-      <span className="flex-1 truncate">{children}</span>
+      {hint ? (
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{children}</span>
+          <span className="text-xs text-fg-4">{hint}</span>
+        </span>
+      ) : (
+        <span className="flex-1 truncate">{children}</span>
+      )}
       {checked && <Check className="!text-accent" />}
       {shortcut && <Kbd keys={shortcut} />}
     </M.Item>

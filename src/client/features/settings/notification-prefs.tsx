@@ -8,7 +8,7 @@ import { Card, EmptyState, Skeleton } from '../../ui/misc'
 import { toastError } from '../../ui/toast'
 import { useProjects, type ProjectRow } from '../projects/model'
 
-export const NOTIFY_EVENTS = ['issue_assigned', 'issue_status', 'issue_comment', 'mention'] as const
+export const NOTIFY_EVENTS = ['issue_assigned', 'issue_status', 'issue_unblocked', 'issue_comment', 'mention'] as const
 const pair = (projectId: string, e: string) => `${projectId}:${e}`
 
 /**

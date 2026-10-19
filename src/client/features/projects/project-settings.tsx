@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { TemplatesManager } from './templates'
-import { Archive, CheckCircle2, RotateCcw, Trash2, UserPlus, X } from 'lucide-react'
+import { Archive, CheckCircle2, ChevronDown, Lock, RotateCcw, Trash2, UserPlus, Users, UsersRound, X } from 'lucide-react'
 import { useState } from 'react'
 import { api, queryClient } from '../../lib/api'
 import { useI18n, type MsgKey } from '../../lib/i18n'
@@ -11,11 +11,12 @@ import { Button, IconButton } from '../../ui/button'
 import { cx } from '../../ui/cx'
 import { Dialog, confirm } from '../../ui/dialog'
 import { Field, Input, Select, Textarea } from '../../ui/field'
+import { Menu, MenuContent, MenuItem, MenuTrigger } from '../../ui/menu'
 import { Badge } from '../../ui/misc'
 import { TabBar } from '../../ui/tabs'
 import { toast, toastError } from '../../ui/toast'
 import { UserPicker } from '../../ui/user-picker'
-import { canManage, invalidateIssues, useLabels, type ProjectDetail } from './model'
+import { MAX_PROJECT_DEPTH, canManage, invalidateIssues, levelOf, subtreeIds, treeOrder, useLabels, useProjects, type ProjectDetail, type ProjectRole } from './model'
 import { LabelChip } from './pickers'
 
 export type SettingsTab = 'general' | 'members' | 'labels' | 'templates' | 'lifecycle'
@@ -59,6 +60,8 @@ function General({ p }: { p: ProjectDetail }) {
   const [reviewerId, setReviewer] = useState(p.reviewerId ?? '')
   const [target, setTarget] = useState(p.targetDate ? new Date(p.targetDate).toISOString().slice(0, 10) : '')
   const [staleDays, setStaleDays] = useState(p.staleDays)
+  const [parentId, setParentId] = useState(p.parentId ?? '')
+  const parents = useParentOptions(p.id)
   const [busy, setBusy] = useState(false)
   const save = async (patch: Record<string, unknown>) => {
     setBusy(true)
@@ -77,6 +80,20 @@ function General({ p }: { p: ProjectDetail }) {
     <div className="flex flex-col gap-4">
       <Field label={t('pm.field.name')}>{(id) => <Input id={id} value={name} disabled={!editable} onChange={(e) => setName(e.target.value)} />}</Field>
       <Field label={t('pm.field.description')}>{(id) => <Textarea id={id} value={description} disabled={!editable} onChange={(e) => setDescription(e.target.value)} />}</Field>
+      <Field label={t('pm.field.parent')} hint={t('pm.parent.hint', { n: MAX_PROJECT_DEPTH })}>
+        {(id) => (
+          <Select id={id} value={parentId} disabled={p.role !== 'owner'} onChange={(e) => setParentId(e.target.value)}>
+            <option value="">{t('pm.parent.none')}</option>
+            {/* The current parent stays listed even when it is not offered as a new choice. */}
+            {[...parents, ...(p.parentId && !parents.some((x) => x.id === p.parentId) ? [{ id: p.parentId, key: p.ancestors.at(-1)?.key ?? '…', name: p.ancestors.at(-1)?.name ?? '', depth: 0 }] : [])].map((x) => (
+              <option key={x.id} value={x.id}>
+                {'\u00a0\u00a0'.repeat(x.depth)}
+                {x.key} · {x.name}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
       <Field label={t('pm.field.reviewer')}>
         {(id) => (
           <Select id={id} value={reviewerId} disabled={!editable} onChange={(e) => setReviewer(e.target.value)}>
@@ -106,17 +123,8 @@ function General({ p }: { p: ProjectDetail }) {
           )}
         </Field>
       </div>
-      {p.role === 'owner' && (
-        <label className="flex items-start gap-3 rounded-xl border border-line p-3 text-sm">
-          <input type="checkbox" className="mt-0.5 size-4 accent-accent" checked={p.hiddenFromAdmins} onChange={(e) => save({ hiddenFromAdmins: e.target.checked })} />
-          <span>
-            <span className="font-medium">{t('settings.pm.hidden')}</span>
-            <span className="block text-xs text-fg-4">{t('settings.pm.hiddenHint')}</span>
-          </span>
-        </label>
-      )}
       {editable && (
-        <Button variant="primary" className="self-end" loading={busy} onClick={() => save({ name: name.trim(), description, reviewerId: reviewerId || null, targetDate: target ? new Date(`${target}T23:59:00`).getTime() : null, staleDays })}>
+        <Button variant="primary" className="self-end" loading={busy} onClick={() => save({ name: name.trim(), description, reviewerId: reviewerId || null, targetDate: target ? new Date(`${target}T23:59:00`).getTime() : null, staleDays, ...(p.role === 'owner' && parentId !== (p.parentId ?? '') ? { parentId: parentId || null } : {}) })}>
           {t('common.save')}
         </Button>
       )}
@@ -129,77 +137,180 @@ function UserNameText({ id }: { id: string }) {
   return <>{dir.get(id)?.name ?? '…'}</>
 }
 
+/** Projects this one may move under: ones I work in, outside its own subtree, within the depth limit. */
+export function useParentOptions(selfId?: string) {
+  const all = useProjects().data ?? []
+  const below = selfId ? subtreeIds(all, selfId) : new Set<string>()
+  const height = selfId ? Math.max(0, ...[...below].map((id) => levelOf(all, id) - levelOf(all, selfId))) : 0
+  return treeOrder(all)
+    .filter(({ p: x }) => x.state === 'active' && (x.role === 'member' || x.role === 'owner' || x.role === 'admin') && !below.has(x.id) && levelOf(all, x.id) + 1 + height <= MAX_PROJECT_DEPTH)
+    .map(({ p: x, depth }) => ({ id: x.id, key: x.key, name: x.name, depth }))
+}
+
+const ROLES = ['viewer', 'member', 'owner'] as const
+
+/** Role dropdown where each role says what it allows. */
+export function RoleSelect({ value, onChange, disabled }: { value: ProjectRole; onChange(r: ProjectRole): void; disabled?: boolean }) {
+  const { t } = useI18n()
+  if (disabled) return <Badge>{t(`role.project.${value}`)}</Badge>
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <Button size="sm" aria-label={t('settings.role')} className="min-w-24 justify-between">
+          {t(`role.project.${value}`)}
+          <ChevronDown className="size-4 text-fg-4" />
+        </Button>
+      </MenuTrigger>
+      <MenuContent className="w-64">
+        {ROLES.map((r) => (
+          <MenuItem key={r} checked={r === value} hint={t(`role.project.${r}.hint`)} onSelect={() => r !== value && onChange(r)}>
+            {t(`role.project.${r}`)}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
+  )
+}
+
+/** Who can open this project right now, in one line, with the owner's switch for admins. */
+function WhoCanSee({ p, onHidden }: { p: ProjectDetail; onHidden(v: boolean): void }) {
+  const { t } = useI18n()
+  const n = p.members.length
+  const [icon, title] = n <= 1 ? [<Lock key="i" />, t('pm.who.private')] : p.hiddenFromAdmins ? [<Users key="i" />, t('pm.who.members', { n })] : [<UsersRound key="i" />, t('pm.who.shared', { n })]
+  return (
+    <div className="flex flex-wrap items-start gap-3 rounded-xl border border-line bg-surface-2 p-3 text-sm [&>svg]:mt-0.5 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-fg-3">
+      {icon}
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">{title}</div>
+        <div className="text-xs text-fg-4">{n <= 1 ? t('pm.who.privateHint') : t('pm.who.hint')}</div>
+      </div>
+      {p.role === 'owner' && n > 1 && (
+        <label className="flex min-h-11 cursor-pointer items-center gap-2 text-xs text-fg-2 md:min-h-0">
+          <input type="checkbox" className="size-4 accent-accent" checked={p.hiddenFromAdmins} onChange={(e) => onHidden(e.target.checked)} />
+          {t('settings.pm.hidden')}
+        </label>
+      )}
+    </div>
+  )
+}
+
 function Members({ p }: { p: ProjectDetail }) {
   const { t } = useI18n()
   const me = useMe()
   const dir = useDirectory()
   const editable = canManage(p.role)
-  const add = async (userId: string) => {
+  const [pending, setPending] = useState<string[]>([])
+  const [role, setRole] = useState<ProjectRole>('member')
+  const [busy, setBusy] = useState(false)
+  const memberIds = new Set(p.members.map((m) => m.userId))
+  // Changes show at once; a refusal (e.g. the last owner) puts the old list back and says why.
+  const optimistic = async (next: (m: ProjectDetail['members']) => ProjectDetail['members'], send: () => Promise<unknown>) => {
+    queryClient.cancelQueries({ queryKey: ['project', p.key] })
+    const prev = queryClient.getQueryData<ProjectDetail>(['project', p.key])
+    queryClient.setQueryData<ProjectDetail>(['project', p.key], (d) => (d ? { ...d, members: next(d.members) } : d))
     try {
-      const r = await api<{ becameShared: boolean }>(`/api/projects/${p.key}/members`, { method: 'POST', body: { userId, role: 'member' } })
-      refresh(p.key)
-      if (r.becameShared) toast(t('settings.pm.nowShared'), 'info')
+      await send()
+      return true
     } catch (err) {
+      queryClient.setQueryData(['project', p.key], prev)
       toastError(err)
+      return false
+    } finally {
+      refresh(p.key)
     }
+  }
+  const addAll = async () => {
+    setBusy(true)
+    const ids = pending
+    const ok = await optimistic(
+      (m) => [...m, ...ids.map((userId) => ({ userId, role }))],
+      () => api(`/api/projects/${p.key}/members`, { method: 'POST', body: { userIds: ids, role } }),
+    )
+    setBusy(false)
+    if (!ok) return
+    setPending([])
+    if (memberIds.size <= 1) toast(t('settings.pm.nowShared'), 'info')
   }
   return (
     <div className="flex flex-col gap-3">
+      <WhoCanSee
+        p={p}
+        onHidden={(v) => {
+          // An in-flight refetch would land after this and undo it.
+          queryClient.cancelQueries({ queryKey: ['project', p.key] })
+          const prev = queryClient.getQueryData<ProjectDetail>(['project', p.key])
+          queryClient.setQueryData<ProjectDetail>(['project', p.key], (d) => (d ? { ...d, hiddenFromAdmins: v } : d))
+          api(`/api/projects/${p.key}`, { method: 'PATCH', body: { hiddenFromAdmins: v } }).then(
+            () => refresh(p.key),
+            (err) => (queryClient.setQueryData(['project', p.key], prev), toastError(err)),
+          )
+        }}
+      />
       {editable && (
-        <UserPicker
-          value={p.members.map((m) => m.userId)}
-          onChange={(ids) => {
-            const added = ids.find((id) => !p.members.some((m) => m.userId === id))
-            if (added) add(added)
-          }}
-          trigger={
-            <Button className="self-start" icon={<UserPlus className="size-4" />}>
-              {t('settings.pm.addMember')}
-            </Button>
-          }
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <UserPicker
+            multiple
+            value={pending}
+            onChange={setPending}
+            filter={(id) => !memberIds.has(id)}
+            trigger={<Button icon={<UserPlus className="size-4" />}>{t('settings.pm.addMember')}</Button>}
+          />
+          {pending.length > 0 && (
+            <>
+              {pending.map((id) => (
+                <span key={id} className="anim-rise inline-flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface-2 pr-1 pl-1">
+                  <UserAvatar id={id} size="xs" />
+                  <UserName id={id} className="text-[13px]" />
+                  <button type="button" aria-label={t('common.delete')} onClick={() => setPending((p) => p.filter((x) => x !== id))} className="rounded-full p-0.5 text-fg-4 hover:bg-surface-3 hover:text-fg">
+                    <X className="size-3.5" />
+                  </button>
+                </span>
+              ))}
+              <RoleSelect value={role} onChange={setRole} />
+              <Button variant="primary" size="sm" loading={busy} onClick={addAll}>
+                {t('settings.pm.addN', { n: pending.length })}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setPending([])}>
+                {t('common.cancel')}
+              </Button>
+            </>
+          )}
+        </div>
       )}
       <ul className="divide-y divide-line rounded-xl border border-line">
         {p.members.map((m) => (
-          <li key={m.userId} className="flex items-center gap-3 px-3 py-2.5">
+          <li key={m.userId} className="anim-rise flex min-h-14 items-center gap-3 px-3 py-2">
             <UserAvatar id={m.userId} size="sm" />
-            <UserName id={m.userId} className="flex-1 truncate text-sm" />
-            {editable ? (
-              <Select
-                value={m.role}
-                className="h-9 w-auto"
-                aria-label={t('settings.role')}
-                onChange={(e) =>
-                  api(`/api/projects/${p.key}/members/${m.userId}`, { method: 'PATCH', body: { role: e.target.value } }).then(
-                    () => refresh(p.key),
-                    (err) => toastError(err),
-                  )
-                }
-              >
-                {(['viewer', 'member', 'owner'] as const).map((r) => (
-                  <option key={r} value={r}>
-                    {t(`role.project.${r}`)}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Badge>{t(`role.project.${m.role}`)}</Badge>
-            )}
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <UserName id={m.userId} className="truncate text-sm" />
+              {m.userId === me.id && <span className="shrink-0 text-xs text-fg-4">{t('settings.pm.you')}</span>}
+            </span>
+            <RoleSelect
+              value={m.role}
+              disabled={!editable}
+              onChange={(r) =>
+                optimistic(
+                  (list) => list.map((x) => (x.userId === m.userId ? { ...x, role: r } : x)),
+                  () => api(`/api/projects/${p.key}/members/${m.userId}`, { method: 'PATCH', body: { role: r } }),
+                )
+              }
+            />
             {(editable || m.userId === me.id) && (
               <IconButton
-                label={t('settings.pm.removeMember')}
+                label={m.userId === me.id ? t('settings.pm.leave') : t('settings.pm.removeMember')}
                 icon={<X />}
                 size="sm"
                 onClick={async () => {
+                  const self = m.userId === me.id
                   const name = dir.get(m.userId)?.name ?? ''
-                  if (!(await confirm({ title: t('settings.pm.removeMember'), body: t('settings.pm.removeConfirm', { name }), danger: true }))) return
-                  try {
-                    await api(`/api/projects/${p.key}/members/${m.userId}`, { method: 'DELETE' })
-                    refresh(p.key)
-                    invalidateIssues()
-                  } catch (err) {
-                    toastError(err)
-                  }
+                  const ok = await confirm({
+                    title: self ? t('settings.pm.leave') : t('settings.pm.removeMember'),
+                    body: self ? t('settings.pm.leaveConfirm') : t('settings.pm.removeConfirm', { name }),
+                    confirmLabel: self ? t('settings.pm.leave') : t('settings.pm.removeMember'),
+                    danger: true,
+                  })
+                  if (!ok) return
+                  if (await optimistic((list) => list.filter((x) => x.userId !== m.userId), () => api(`/api/projects/${p.key}/members/${m.userId}`, { method: 'DELETE' }))) invalidateIssues()
                 }}
               />
             )}
@@ -309,6 +420,13 @@ function Lifecycle({ p, onClose }: { p: ProjectDetail; onClose(): void }) {
   const [typed, setTyped] = useState('')
   const owner = canManage(p.role)
   const act = async (action: 'close' | 'reopen' | 'archive' | 'restore') => {
+    if ((action === 'close' || action === 'archive') && p.children.length > 0) {
+      const ok = await confirm({
+        title: action === 'close' ? t('settings.pm.close') : t('settings.pm.archive'),
+        body: t('settings.pm.childrenStay', { list: p.children.map((c) => c.key).join('、') }),
+      })
+      if (!ok) return
+    }
     try {
       await api(`/api/projects/${p.key}/state`, { method: 'POST', body: { action } })
       refresh(p.key)

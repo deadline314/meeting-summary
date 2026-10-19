@@ -10,6 +10,7 @@ export const ERROR_CODES = [
   'invalid_admin_key',
   'admin_key_locked',
   'last_owner',
+  'last_project_owner',
   'payload_too_large',
   'quota_exceeded',
   'unsupported_type',

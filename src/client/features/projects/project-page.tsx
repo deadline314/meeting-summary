@@ -1,5 +1,5 @@
-import { useNavigate, useRouter } from '@tanstack/react-router'
-import { BarChart3, CalendarRange, FolderKanban, Inbox, Kanban, List, Plus, Search, Settings2, SlidersHorizontal } from 'lucide-react'
+import { Link, useNavigate, useRouter } from '@tanstack/react-router'
+import { BarChart3, CalendarRange, ChevronRight, FolderKanban, FolderPlus, Inbox, Kanban, List, Plus, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
 import { useDebounced } from '../../lib/hooks'
@@ -10,15 +10,15 @@ import { Badge, EmptyState, Skeleton } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
 import { openCreateIssue } from './create-issue'
 import { IssueBoard, IssueList, ViewProvider, type Filters } from './issue-views'
-import { PRIORITIES, STATUSES, canWrite, useLabels, useProject, useProjects } from './model'
+import { PRIORITIES, STATUSES, canWrite, treeOrder, useLabels, useProject, useProjects, type ProjectDetail } from './model'
 import { useAssigneeOptions } from './pickers'
-import { NewProjectDialog, VisibilityBadge } from './projects-layout'
+import { NewProjectDialog, ProjectContextMenu, VisibilityBadge, openNewProject } from './projects-layout'
 import { ProjectSettings, type SettingsTab } from './project-settings'
 import { SaveViewButton, useViews } from './saved-views'
 import { ProjectStats } from './stats'
 import { IssueTimeline } from './timeline'
 
-export type ProjectSearch = Omit<Filters, 'due'> & { all?: boolean; due?: 'overdue' | 'week' | 'none'; view?: 'list' | 'board' | 'timeline' | 'stats'; settings?: SettingsTab }
+export type ProjectSearch = Omit<Filters, 'due' | 'blocking'> & { all?: boolean; due?: 'overdue' | 'week' | 'none'; blocking?: 'blocked' | 'blocking'; view?: 'list' | 'board' | 'timeline' | 'stats'; settings?: SettingsTab }
 
 function Toolbar({
   search,
@@ -56,9 +56,9 @@ function Toolbar({
         ]
       : []),
   ])
-  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q || search.due || search.statuses || search.project)
+  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q || search.due || search.blocking || search.statuses || search.project)
   const [showFilters, setShowFilters] = useState(false)
-  const active = [search.assigneeId, search.priority, search.labelId, search.sort, search.due, search.statuses, search.project].filter(Boolean).length
+  const active = [search.assigneeId, search.priority, search.labelId, search.sort, search.due, search.blocking, search.statuses, search.project].filter(Boolean).length
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
       {showView && (
@@ -142,6 +142,14 @@ function Toolbar({
           </option>
         ))}
       </Select>
+      <Select value={search.blocking ?? ''} onChange={(e) => setSearch({ blocking: (e.target.value || undefined) as ProjectSearch['blocking'] })} aria-label={t('pm.filter.blocking')} className="h-9 w-auto">
+        <option value="">{t('pm.filter.blocking')}</option>
+        {(['blocked', 'blocking'] as const).map((d) => (
+          <option key={d} value={d}>
+            {t(`pm.filter.blocking.${d}`)}
+          </option>
+        ))}
+      </Select>
       <Select value={search.sort ?? ''} onChange={(e) => setSearch({ sort: e.target.value || undefined })} aria-label={t('pm.sort.manual')} className="h-9 w-auto">
         {(['manual', 'created', 'updated', 'priority', 'due'] as const).map((s) => (
           <option key={s} value={s === 'manual' ? '' : s}>
@@ -152,7 +160,7 @@ function Toolbar({
       </div>
       )}
       {filtered && (
-        <Button size="sm" variant="ghost" onClick={() => (setQ(''), setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined, due: undefined, statuses: undefined, project: undefined }))}>
+        <Button size="sm" variant="ghost" onClick={() => (setQ(''), setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined, due: undefined, blocking: undefined, statuses: undefined, project: undefined }))}>
           {t('common.clearFilters')}
         </Button>
       )}
@@ -187,8 +195,9 @@ function MobileProjectPicker({ current }: { current?: string }) {
             ))}
           </optgroup>
         )}
-        {(projects.data ?? []).map((p) => (
+        {treeOrder(projects.data ?? []).map(({ p, depth }) => (
           <option key={p.id} value={p.key}>
+            {'  '.repeat(depth)}
             {p.key} · {p.name}
           </option>
         ))}
@@ -203,7 +212,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
   const { t } = useI18n()
   const projects = useProjects()
   const [creating, setCreating] = useState(false)
-  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, q: search.q, sort: search.sort, due: search.due, statuses: search.statuses, project: search.project }
+  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, q: search.q, sort: search.sort, due: search.due, blocking: search.blocking, statuses: search.statuses, project: search.project }
   return (
     <div>
       <MobileProjectPicker />
@@ -244,7 +253,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
         />
       ) : (
         <ViewProvider key={search.all ? 'all' : 'mine'} scope={search.all ? {} : { mine: true }} labels={[]}>
-          <IssueList filters={filters} empty={<EmptyState className="py-20" icon={<Inbox />} title={search.q || search.priority || search.due || search.statuses || search.project ? t('pm.emptyFiltered') : t('pm.emptyMine')} />} />
+          <IssueList filters={filters} empty={<EmptyState className="py-20" icon={<Inbox />} title={search.q || search.priority || search.due || search.blocking || search.statuses || search.project ? t('pm.emptyFiltered') : t('pm.emptyMine')} />} />
         </ViewProvider>
       )}
       {creating && <NewProjectDialog onClose={() => setCreating(false)} />}
@@ -265,8 +274,8 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
     )
   if (q.isError) throw q.error
   const p = q.data
-  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, labelId: search.labelId, q: search.q, sort: search.sort, due: search.due, statuses: search.statuses }
-  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q || search.due || search.statuses)
+  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, labelId: search.labelId, q: search.q, sort: search.sort, due: search.due, blocking: search.blocking, statuses: search.statuses }
+  const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q || search.due || search.blocking || search.statuses)
   const writable = canWrite(p.role) && p.state === 'active'
   return (
     <div className="flex min-h-full flex-col">
@@ -274,6 +283,18 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
       <div className="flex flex-wrap items-center gap-3 px-4 pt-5 pb-3 md:px-6">
         <span className="flex h-9 min-w-12 items-center justify-center rounded-xl bg-accent-soft px-2 font-mono text-sm font-bold text-accent-text">{p.key}</span>
         <div className="min-w-0 flex-1">
+          {p.ancestors.length > 0 && (
+            <nav aria-label={t('pm.field.parent')} className="flex flex-wrap items-center gap-1 text-xs text-fg-4">
+              {p.ancestors.map((a) => (
+                <span key={a.key} className="flex items-center gap-1">
+                  <Link to={`/projects/${a.key}`} className="hover:text-fg hover:underline">
+                    {a.name}
+                  </Link>
+                  <ChevronRight className="size-3" />
+                </span>
+              ))}
+            </nav>
+          )}
           <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight max-md:flex-wrap md:truncate md:text-xl">
             {p.name}
             <VisibilityBadge p={p} />
@@ -289,6 +310,7 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
           </Button>
         )}
       </div>
+      {(p.children.length > 0 || (writable && !search.view)) && <SubProjects p={p} writable={writable} />}
       <Toolbar search={search} setSearch={setSearch} labels={labels.data} memberIds={p.members.map((m) => m.userId)} showView />
       <ViewProvider key={p.key} scope={{ key: p.key }} role={p.role} labels={labels.data ?? []} memberIds={p.members.map((m) => m.userId)}>
         {search.view === 'board' ? (
@@ -307,7 +329,7 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
                   icon={<Search />}
                   title={t('pm.emptyFiltered')}
                   action={
-                    <Button size="sm" onClick={() => setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined, due: undefined, statuses: undefined })}>
+                    <Button size="sm" onClick={() => setSearch({ assigneeId: undefined, priority: undefined, labelId: undefined, q: undefined, due: undefined, blocking: undefined, statuses: undefined })}>
                       {t('common.clearFilters')}
                     </Button>
                   }
@@ -332,6 +354,45 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
         )}
       </ViewProvider>
       {search.settings && <ProjectSettings project={p} tab={search.settings} onTab={(s) => setSearch({ settings: s })} onClose={() => setSearch({ settings: undefined })} />}
+    </div>
+  )
+}
+
+/** Sub-projects I can see, as chips; members can start a new one here. */
+function SubProjects({ p, writable }: { p: ProjectDetail; writable: boolean }) {
+  const { t } = useI18n()
+  const rows = useProjects().data ?? []
+  if (!p.children.length && !writable) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-4 pb-3 md:px-6">
+      {p.children.length > 0 && <span className="text-xs font-medium text-fg-4">{t('pm.subProjects')}</span>}
+      {p.children.map((c) => {
+        const chip = (
+          <Link to={`/projects/${c.key}`} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-[13px] text-fg-2 hover:border-accent max-md:h-11">
+            <span className="font-mono text-[11px] font-bold text-fg-3">{c.key}</span>
+            <span className="max-w-40 truncate">{c.name}</span>
+            <VisibilityBadge p={c} />
+            {c.openIssues > 0 && <span className="text-[11px] text-fg-4">{c.openIssues}</span>}
+          </Link>
+        )
+        const row = rows.find((r) => r.key === c.key)
+        return row ? (
+          <ProjectContextMenu key={c.key} p={row}>
+            {chip}
+          </ProjectContextMenu>
+        ) : (
+          <span key={c.key}>{chip}</span>
+        )
+      })}
+      {writable && (
+        <button
+          type="button"
+          onClick={() => openNewProject({ parentId: p.id })}
+          className="inline-flex h-8 items-center gap-1 rounded-full border border-dashed border-line-strong px-2.5 text-[13px] text-fg-3 hover:border-accent hover:text-accent-text max-md:h-11"
+        >
+          <FolderPlus className="size-3.5" /> {t('pm.newSubProject')}
+        </button>
+      )}
     </div>
   )
 }

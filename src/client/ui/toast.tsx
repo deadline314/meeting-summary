@@ -30,6 +30,8 @@ function dismiss(id: number) {
 export function toastError(err: unknown, action?: ToastAction) {
   const locale: Locale = document.documentElement.lang.startsWith('en') ? 'en' : 'zh'
   if (err instanceof ApiError) {
+    // A 401 already opens the "session expired" dialog; a toast would only repeat it.
+    if (err.status === 401) return
     const key = `error.${err.code}` as MsgKey
     toast(translate(locale, key, err.params), 'error', err.requestId ? translate(locale, 'common.requestId', { id: err.requestId.slice(0, 8) }) : undefined, action)
   } else {

@@ -32,7 +32,7 @@ import {
 } from '../services/issues'
 import {
   access,
-  addMember,
+  addMembers,
   createProject,
   deleteLabel,
   deleteProject,
@@ -68,7 +68,16 @@ projectRoutes.post('/projects', async (c) => {
   const ctx = ctxOf(c)
   const input = await body(
     c,
-    z.object({ key: z.string().trim().min(2).max(6), name: z.string().trim().min(1).max(80), description: z.string().max(5000).optional(), parentId: z.string().nullable().optional(), targetDate: z.number().int().nullable().optional(), operationId: opId }),
+    z.object({
+      key: z.string().trim().min(2).max(6),
+      name: z.string().trim().min(1).max(80),
+      description: z.string().max(5000).optional(),
+      parentId: z.string().nullable().optional(),
+      targetDate: z.number().int().nullable().optional(),
+      members: z.array(z.object({ userId: z.string(), role })).max(200).optional(),
+      copyParentMembers: z.boolean().optional(),
+      operationId: opId,
+    }),
   )
   const p = await idempotent(ctx, input.operationId, () => createProject(ctx, input))
   return c.json({ project: await projectDto(ctx, p, 'owner') }, 201)
@@ -111,8 +120,11 @@ projectRoutes.delete('/projects/:key', async (c) => {
 })
 
 projectRoutes.post('/projects/:key/members', async (c) => {
-  const input = await body(c, z.object({ userId: z.string(), role: role.default('member') }))
-  return c.json(await addMember(ctxOf(c), c.req.param('key'), input.userId, input.role))
+  const input = await body(
+    c,
+    z.object({ userId: z.string().optional(), userIds: z.array(z.string()).min(1).max(200).optional(), role: role.default('member') }).refine((x) => x.userId || x.userIds, 'userId or userIds is required'),
+  )
+  return c.json(await addMembers(ctxOf(c), c.req.param('key'), input.userIds ?? [input.userId!], input.role))
 })
 
 projectRoutes.patch('/projects/:key/members/:userId', async (c) => {
@@ -146,6 +158,7 @@ const filter = z.object({
   q: z.string().max(100).optional(),
   sort: z.enum(['manual', 'created', 'updated', 'priority', 'due']).optional(),
   due: z.enum(['overdue', 'week', 'none']).optional(),
+  blocking: z.enum(['blocked', 'blocking']).optional(),
   project: z.string().max(6).optional(),
   doneSince: z.coerce.number().int().optional(),
   offset: z.coerce.number().int().min(0).default(0),

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTour } from '../../app/tour'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { CalendarClock, CheckSquare, Plus } from 'lucide-react'
+import { CalendarClock, CheckSquare, ChevronRight, ExternalLink, Link2, Plus, Settings2, Trophy } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useActions } from '../../lib/actions'
 import { api } from '../../lib/api'
@@ -10,6 +10,7 @@ import { useI18n } from '../../lib/i18n'
 import { isAdminRole, useMe } from '../../lib/session'
 import { Button } from '../../ui/button'
 import { Badge, Card, EmptyState, PageHeader, Skeleton } from '../../ui/misc'
+import { ContextMenu, CtxItem, CtxLabel, CtxSeparator, copyText, openInNewTab, siteLink } from '../../ui/context-menu'
 import { toastError } from '../../ui/toast'
 import type { Task } from './model'
 import { SubmissionBadge } from './status'
@@ -77,6 +78,47 @@ export function TasksPage() {
   )
 }
 
+/** Right-click on a task: open, link, leaderboard; staff also get its settings. */
+function TaskContextMenu({ task, children }: { task: Task; children: React.ReactNode }) {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const path = `/tasks/${task.id}`
+  const go = (tab?: 'leaderboard' | 'settings') => navigate({ to: path, search: tab ? { tab } : {} })
+  return (
+    <ContextMenu
+      menu={
+        <>
+          <CtxLabel>{task.title}</CtxLabel>
+          <CtxItem icon={<ChevronRight />} onSelect={() => go()}>
+            {t('ctx.open')}
+          </CtxItem>
+          <CtxItem icon={<ExternalLink />} onSelect={() => openInNewTab(path)}>
+            {t('ctx.openNewTab')}
+          </CtxItem>
+          <CtxItem icon={<Link2 />} onSelect={() => copyText(siteLink(path), t('common.copied'))}>
+            {t('pm.copyLink')}
+          </CtxItem>
+          {(task.leaderboard || task.canManage) && (
+            <CtxItem icon={<Trophy />} onSelect={() => go('leaderboard')}>
+              {t('tasks.tab.leaderboard')}
+            </CtxItem>
+          )}
+          {task.canManage && (
+            <>
+              <CtxSeparator />
+              <CtxItem icon={<Settings2 />} onSelect={() => go('settings')}>
+                {t('ctx.editTask')}
+              </CtxItem>
+            </>
+          )}
+        </>
+      }
+    >
+      {children}
+    </ContextMenu>
+  )
+}
+
 function TaskCard({ task }: { task: Task }) {
   const { t, fmt } = useI18n()
   const now = useNow(60_000)
@@ -84,6 +126,7 @@ function TaskCard({ task }: { task: Task }) {
   const closed = task.dueAt && task.dueAt <= now
   const left = task.dueAt && task.dueAt > now ? task.dueAt - now : null
   return (
+    <TaskContextMenu task={task}>
     <Link
       to={`/tasks/${task.id}`}
       className="group flex h-full flex-col gap-3 rounded-2xl border border-line bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card"
@@ -109,6 +152,7 @@ function TaskCard({ task }: { task: Task }) {
         <SubmissionBadge status={task.best?.status ?? null} score={task.best?.score} />
       </div>
     </Link>
+    </TaskContextMenu>
   )
 }
 

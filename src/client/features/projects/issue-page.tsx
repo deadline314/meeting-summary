@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, BellOff, BellRing, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, Paperclip, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, BellOff, BellRing, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, Copy, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, OctagonAlert, Paperclip, Pencil, Plus, RefreshCw, Reply, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
@@ -11,13 +11,14 @@ import { renderMarkdown } from '../../lib/markdown'
 import { useDirectory, useMe } from '../../lib/session'
 import { AvatarStack, UserAvatar, UserName } from '../../ui/avatar'
 import { Button, IconButton } from '../../ui/button'
+import { ContextMenu, CtxItem, CtxSeparator, copyText, siteLink } from '../../ui/context-menu'
 import { cx } from '../../ui/cx'
 import { Input, Textarea } from '../../ui/field'
 import { Badge, Card, EmptyState, Skeleton, Spinner } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
 import { toast, toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
-import { driveName, iconFor, useFiles } from '../files/files-panel'
+import { FileContextMenu, driveName, iconFor, useFiles } from '../files/files-panel'
 import { compressImage, fileUrl, uploadFile } from '../../lib/upload'
 import { confirm } from '../../ui/dialog'
 import { Composer } from '../notes/comments'
@@ -29,7 +30,7 @@ import { openDuplicate } from './duplicate-issue'
 import { offerCloseDuplicate } from './relate'
 import { StaleBadge } from './issue-views'
 import { IssueStatusIcon, PriorityIcon } from './icons'
-import { canWrite, invalidateIssues, isDone, readNav, rememberLast, useLabels, useProject, type IssuePatch, type IssueRow, type Status } from './model'
+import { canWrite, confirmBlocked, invalidateIssues, isDone, readNav, rememberLast, useLabels, useProject, type IssuePatch, type IssueRow, type Status } from './model'
 import { AssigneeIcon, LabelChip, LabelIcon, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 type Detail = {
@@ -83,6 +84,7 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
   const editable = canWrite(i.role) && i.projectState === 'active'
   const conflict = base !== null && i.version > base
   const save = async (patch: IssuePatch) => {
+    if (!(await confirmBlocked([i], patch.status, t))) return
     try {
       const r = await api<{ issue: IssueRow }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: i.version, ...patch } })
       setBase(r.issue.version)
@@ -138,7 +140,7 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
               </motion.div>
             )}
           </AnimatePresence>
-          {(i.parent || i.blockedBy.length > 0) && (
+          {(i.parent || (!isDone(i.status) && (i.blockedBy.length + i.hiddenBlockers > 0 || i.blocks.length > 0))) && (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {i.parent && (
                 <Link to={`/projects/${i.parent.ref.split('-')[0]}/${i.parent.ref}`} className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-fg-3 hover:border-accent">
@@ -146,13 +148,20 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
                   <span className="max-w-60 truncate">{i.parent.title}</span>
                 </Link>
               )}
-              {i.blockedBy.length > 0 && (
-                <Tooltip label={i.blockedBy.map((b) => `${b.ref} ${b.title}`).join('\n')}>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2.5 py-1 font-medium text-warning">
-                    <CircleSlash className="size-3.5" />
-                    {t('pm.blockedBy', { n: i.blockedBy.length })}
-                  </span>
-                </Tooltip>
+              {!isDone(i.status) && i.blockedBy.length + i.hiddenBlockers > 0 && (
+                <span className="inline-flex flex-wrap items-center gap-1.5 rounded-full bg-warning-soft px-2.5 py-1 font-medium text-warning">
+                  <CircleSlash className="size-3.5" />
+                  {t('pm.block.blockedBy')}
+                  <RefLinks items={i.blockedBy} />
+                  {i.hiddenBlockers > 0 && <span className="font-normal">{t('pm.block.hidden', { n: i.hiddenBlockers })}</span>}
+                </span>
+              )}
+              {!isDone(i.status) && i.blocks.length > 0 && (
+                <span className="inline-flex flex-wrap items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 font-medium text-fg-3">
+                  <OctagonAlert className="size-3.5" />
+                  {t('pm.block.blocking')}
+                  <RefLinks items={i.blocks} />
+                </span>
               )}
             </div>
           )}
@@ -402,26 +411,22 @@ function IssueBody({ d, editable }: { d: Detail; editable: boolean }) {
           {items.map((f) => {
             const Icon = iconFor(f)
             const open = () => (f.kind === 'drive' ? window.open(f.driveUrl!, '_blank', 'noopener') : window.open(fileUrl(f.id), '_blank', 'noopener'))
+            const remove = async () => {
+              if (await confirm({ title: t('common.delete'), body: t('files.deleteConfirm', { name: f.name }), danger: true })) api(`/api/files/${f.id}`, { method: 'DELETE' }).then(refreshFiles, (e) => toastError(e))
+            }
+            const canDelete = f.ownerId === me.id || me.role !== 'student'
             return (
-              <li key={f.id} className="group flex h-9 items-center gap-2.5 rounded-lg px-1 text-sm hover:bg-surface-2">
+              <FileContextMenu key={f.id} f={f} onOpen={open} onDelete={canDelete ? remove : undefined}>
+              <li className="group flex h-9 items-center gap-2.5 rounded-lg px-1 text-sm hover:bg-surface-2">
                 {f.kind === 'image' ? <img src={fileUrl(f.id)} alt="" className="size-6 rounded object-cover" loading="lazy" /> : <Icon className="size-4 shrink-0 text-fg-4" />}
                 <button onClick={open} className="min-w-0 flex-1 truncate text-left hover:text-accent-text">
                   {f.name}
                 </button>
                 <span className="shrink-0 text-xs text-fg-4">{f.kind === 'drive' ? 'Drive' : fmt.bytes(f.size)}</span>
                 {f.kind !== 'drive' && <IconButton label={t('files.download')} icon={<Download />} size="sm" className="size-7 opacity-0 group-hover:opacity-100 max-md:opacity-100" onClick={() => (location.href = `${fileUrl(f.id)}?download=1`)} />}
-                {(f.ownerId === me.id || me.role !== 'student') && (
-                  <IconButton
-                    label={t('common.delete')}
-                    icon={<Trash2 />}
-                    size="sm"
-                    className="size-7 opacity-0 group-hover:opacity-100 max-md:opacity-100"
-                    onClick={async () => {
-                      if (await confirm({ title: t('common.delete'), body: t('files.deleteConfirm', { name: f.name }), danger: true })) api(`/api/files/${f.id}`, { method: 'DELETE' }).then(refreshFiles, (e) => toastError(e))
-                    }}
-                  />
-                )}
+                {canDelete && <IconButton label={t('common.delete')} icon={<Trash2 />} size="sm" className="size-7 opacity-0 group-hover:opacity-100 max-md:opacity-100" onClick={remove} />}
               </li>
+              </FileContextMenu>
             )
           })}
         </ul>
@@ -535,6 +540,20 @@ function SubIssues({ d, editable, adding, setAdding }: { d: Detail; editable: bo
   )
 }
 
+function RefLinks({ items }: { items: { ref: string; title: string }[] }) {
+  return (
+    <>
+      {items.map((b) => (
+        <Tooltip key={b.ref} label={b.title}>
+          <Link to={`/projects/${b.ref.split('-')[0]}/${b.ref}`} className="font-mono underline-offset-2 hover:underline">
+            {b.ref}
+          </Link>
+        </Tooltip>
+      ))}
+    </>
+  )
+}
+
 function Relations({ d, editable, adding, setAdding }: { d: Detail; editable: boolean; adding: boolean; setAdding(v: boolean): void }) {
   const { t } = useI18n()
   const qc = useQueryClient()
@@ -561,7 +580,7 @@ function Relations({ d, editable, adding, setAdding }: { d: Detail; editable: bo
             <IssueStatusIcon status={r.status} />
             <Link to={`/projects/${r.ref.split('-')[0]}/${r.ref}`} className="flex min-w-0 flex-1 items-center gap-2">
               <span className="font-mono text-xs text-fg-4">{r.ref}</span>
-              <span className="truncate">{r.title}</span>
+              <span className={cx('truncate', isDone(r.status) && 'text-fg-4 line-through')}>{r.title}</span>
             </Link>
             {editable && (
               <IconButton
@@ -765,7 +784,36 @@ function Timeline({ issueRef, issueId, editable, owner, memberIds }: { issueRef:
               {it.change.source !== 'web' && <span className="rounded bg-surface-2 px-1 font-mono text-[10px]">{it.change.source}</span>}
             </li>
           ) : (
-            <li key={`m${it.comment.id}`} className={cx(it.comment.parentId && 'ml-8')}>
+            <li key={`m${it.comment.id}`} id={`comment-${it.comment.id}`} className={cx('scroll-mt-20', it.comment.parentId && 'ml-8')}>
+              <ContextMenu
+                disabled={editingId === it.comment.id || !!it.comment.deletedAt}
+                menu={
+                  <>
+                    {editable && !it.comment.parentId && (
+                      <CtxItem icon={<Reply />} onSelect={() => setReplyTo(it.comment.id)}>
+                        {t('comments.reply')}
+                      </CtxItem>
+                    )}
+                    <CtxItem icon={<Copy />} onSelect={() => copyText(it.comment.body, t('common.copied'))}>
+                      {t('ctx.copyText')}
+                    </CtxItem>
+                    <CtxItem icon={<Link2 />} onSelect={() => copyText(siteLink(`${location.pathname}#comment-${it.comment.id}`), t('common.copied'))}>
+                      {t('pm.copyLink')}
+                    </CtxItem>
+                    {it.comment.authorId === me.id && (
+                      <>
+                        <CtxSeparator />
+                        <CtxItem icon={<Pencil />} onSelect={() => setEditingId(it.comment.id)}>
+                          {t('comments.edit')}
+                        </CtxItem>
+                        <CtxItem icon={<Trash2 />} danger onSelect={() => api(`/api/issues/${issueRef}/comments/${it.comment.id}`, { method: 'DELETE' }).then(refresh, (e) => toastError(e))}>
+                          {t('common.delete')}
+                        </CtxItem>
+                      </>
+                    )}
+                  </>
+                }
+              >
               <Card className="p-3">
                 <div className="mb-1 flex items-center gap-2 text-xs">
                   <UserAvatar id={it.comment.authorId} size="xs" />
@@ -815,6 +863,7 @@ function Timeline({ issueRef, issueId, editable, owner, memberIds }: { issueRef:
                   <Html html={renderMarkdown(it.comment.body)} className="prose-md text-sm" />
                 )}
               </Card>
+              </ContextMenu>
               {replyTo === it.comment.id && (
                 <div className="mt-2 ml-8">
                   <Composer
@@ -867,6 +916,7 @@ function useChangeText() {
     if (c.action === 'restored') return t('change.restored')
     if (c.action === 'referenced') return t('change.referenced')
     if (c.action === 'related') return t('change.related', { type: t(`pm.rel.${c.data.type as 'relates'}` as MsgKey), target: String(c.data.target ?? '') })
+    if (c.action === 'unrelated') return t('change.unrelated', { type: t(`pm.rel.${c.data.type as 'relates'}` as MsgKey), target: String(c.data.target ?? '') })
     const f = String(c.data.field ?? '')
     const v = (x: unknown) =>
       f === 'status' ? t(`status.${x as Status}` as MsgKey) : f === 'priority' ? t(`priority.${x as 'none'}` as MsgKey) : f === 'dueAt' ? (x ? fmt.date(Number(x)) : t('issue.none')) : String(x ?? '')

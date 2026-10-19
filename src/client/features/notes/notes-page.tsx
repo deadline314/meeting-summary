@@ -1,11 +1,11 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useTour } from '../../app/tour'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { CalendarDays, ChevronLeft, ChevronRight, FileText, List, MapPin, MessageSquareWarning, Plus, Search } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, FileArchive, FileCode, FileText, Link2, List, MapPin, MessageSquareWarning, Plus, Search, Trash2 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useActions } from '../../lib/actions'
-import { api } from '../../lib/api'
+import { api, queryClient } from '../../lib/api'
 import { useDebounced } from '../../lib/hooks'
 import { useI18n } from '../../lib/i18n'
 import { AvatarStack, UserName } from '../../ui/avatar'
@@ -14,8 +14,11 @@ import { cx } from '../../ui/cx'
 import { Input, Select } from '../../ui/field'
 import { Badge, Card, EmptyState, PageHeader, Skeleton } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
-import { toastError } from '../../ui/toast'
-import { useDirectory } from '../../lib/session'
+import { ContextMenu, CtxItem, CtxLabel, CtxSeparator, copyText, openInNewTab, siteLink } from '../../ui/context-menu'
+import { confirm } from '../../ui/dialog'
+import { toast, toastError } from '../../ui/toast'
+import { useDirectory, useMe } from '../../lib/session'
+import { exportHtml, exportName, exportZip } from './export'
 import { NoteFormDialog, type NoteFields } from './note-form'
 
 export type NotesSearch = {
@@ -40,6 +43,7 @@ type NoteRow = {
   attendeeIds: string[]
   openComments: number
   snippet: string | null
+  createdBy: string
 }
 
 const PAGE = 30
@@ -215,9 +219,78 @@ export function NotesPage({ search, setSearch }: { search: NotesSearch; setSearc
   )
 }
 
+/** Right-click on a note: open, link, export, delete (creator or staff). */
+function NoteContextMenu({ n, children }: { n: NoteRow; children: React.ReactNode }) {
+  const { t, locale } = useI18n()
+  const me = useMe()
+  const navigate = useNavigate()
+  const path = `/notes/${n.id}`
+  const run = async (kind: 'zip' | 'html') => {
+    const strings = { attachments: t('export.attachments'), missing: t('export.missing'), source: t('export.source') }
+    const base = exportName(n.title, n.startsAt)
+    toast(t('export.started'), 'info')
+    try {
+      if (kind === 'zip') await exportZip(n.id, base, locale, strings, () => {})
+      else await exportHtml(n.id, base, locale, n.title, strings, () => {})
+      toast(t('export.done'))
+    } catch (err) {
+      toastError(err)
+    }
+  }
+  return (
+    <ContextMenu
+      menu={
+        <>
+          <CtxLabel>{n.title}</CtxLabel>
+          <CtxItem icon={<ChevronRight />} onSelect={() => navigate({ to: path })}>
+            {t('ctx.open')}
+          </CtxItem>
+          <CtxItem icon={<ExternalLink />} onSelect={() => openInNewTab(path)}>
+            {t('ctx.openNewTab')}
+          </CtxItem>
+          <CtxItem icon={<Link2 />} onSelect={() => copyText(siteLink(path), t('common.copied'))}>
+            {t('pm.copyLink')}
+          </CtxItem>
+          <CtxSeparator />
+          <CtxItem icon={<FileArchive />} onSelect={() => run('zip')}>
+            {t('export.zip')}
+          </CtxItem>
+          <CtxItem icon={<FileCode />} onSelect={() => run('html')}>
+            {t('export.html')}
+          </CtxItem>
+          {(n.createdBy === me.id || me.role !== 'student') && (
+            <>
+              <CtxSeparator />
+              <CtxItem
+                icon={<Trash2 />}
+                danger
+                onSelect={async () => {
+                  if (!(await confirm({ title: `${t('common.delete')}「${n.title}」`, body: t('notes.deleteConfirm'), danger: true }))) return
+                  try {
+                    await api(`/api/notes/${n.id}`, { method: 'DELETE' })
+                    toast(t('notes.deleted'))
+                    queryClient.invalidateQueries({ queryKey: ['notes'] })
+                  } catch (err) {
+                    toastError(err)
+                  }
+                }}
+              >
+                {t('common.delete')}
+              </CtxItem>
+            </>
+          )}
+        </>
+      }
+    >
+      {children}
+    </ContextMenu>
+  )
+}
+
 function NoteCard({ n }: { n: NoteRow }) {
   const { t, fmt } = useI18n()
   return (
+    <NoteContextMenu n={n}>
     <Link
       to={`/notes/${n.id}`}
       className="group block rounded-2xl border border-line bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card"
@@ -254,6 +327,7 @@ function NoteCard({ n }: { n: NoteRow }) {
         </div>
       </div>
     </Link>
+    </NoteContextMenu>
   )
 }
 

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, MessageSquare, MoreHorizontal, Pencil, RotateCcw, Send, Trash2 } from 'lucide-react'
+import { Check, Copy, Link2, MessageSquare, MoreHorizontal, Pencil, Reply, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api'
@@ -8,6 +8,7 @@ import { renderMarkdown } from '../../lib/markdown'
 import { useMe } from '../../lib/session'
 import { UserAvatar, UserName } from '../../ui/avatar'
 import { Button, IconButton } from '../../ui/button'
+import { ContextMenu, CtxItem, CtxSeparator, copyText, siteLink } from '../../ui/context-menu'
 import { cx } from '../../ui/cx'
 import { confirm } from '../../ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../../ui/menu'
@@ -140,10 +141,10 @@ function ThreadCard({ th, noteId, active, onActivate, refresh }: { th: Thread; n
       )}
     >
       <Quote text={th.quote} deleted={deleted} />
-      <Message c={th} noteId={noteId} refresh={refresh} />
+      <Message c={th} noteId={noteId} refresh={refresh} onReply={() => setReplying(true)} />
       {th.replies.map((r) => (
         <div key={r.id} className="mt-3 border-t border-line pt-3">
-          <Message c={r} noteId={noteId} refresh={refresh} />
+          <Message c={r} noteId={noteId} refresh={refresh} onReply={() => setReplying(true)} />
         </div>
       ))}
       <div className="mt-3 flex items-center gap-1">
@@ -182,12 +183,42 @@ function ThreadCard({ th, noteId, active, onActivate, refresh }: { th: Thread; n
   )
 }
 
-function Message({ c, noteId, refresh }: { c: NoteComment; noteId: string; refresh(): void }) {
+function Message({ c, noteId, refresh, onReply }: { c: NoteComment; noteId: string; refresh(): void; onReply(): void }) {
   const me = useMe()
   const { t, fmt } = useI18n()
   const [editing, setEditing] = useState(false)
   if (c.deletedAt) return <div className="text-[13px] text-fg-4 italic">{t('comments.deleted')}</div>
+  const remove = async () => {
+    if (await confirm({ title: t('common.delete'), body: t('comments.deleteConfirm'), danger: true })) api(`/api/notes/${noteId}/comments/${c.id}`, { method: 'DELETE' }).then(refresh, toastError)
+  }
   return (
+    <ContextMenu
+      disabled={editing}
+      menu={
+        <>
+          <CtxItem icon={<Reply />} onSelect={onReply}>
+            {t('comments.reply')}
+          </CtxItem>
+          <CtxItem icon={<Copy />} onSelect={() => copyText(c.body, t('common.copied'))}>
+            {t('ctx.copyText')}
+          </CtxItem>
+          <CtxItem icon={<Link2 />} onSelect={() => copyText(siteLink(`/notes/${noteId}?tab=comments`), t('common.copied'))}>
+            {t('pm.copyLink')}
+          </CtxItem>
+          {c.authorId === me.id && (
+            <>
+              <CtxSeparator />
+              <CtxItem icon={<Pencil />} onSelect={() => setEditing(true)}>
+                {t('common.edit')}
+              </CtxItem>
+              <CtxItem icon={<Trash2 />} danger onSelect={remove}>
+                {t('common.delete')}
+              </CtxItem>
+            </>
+          )}
+        </>
+      }
+    >
     <div className="flex gap-2.5">
       <UserAvatar id={c.authorId} size="sm" />
       <div className="min-w-0 flex-1">
@@ -207,14 +238,7 @@ function Message({ c, noteId, refresh }: { c: NoteComment; noteId: string; refre
                 <MenuItem icon={<Pencil />} onSelect={() => setEditing(true)}>
                   {t('common.edit')}
                 </MenuItem>
-                <MenuItem
-                  icon={<Trash2 />}
-                  danger
-                  onSelect={async () => {
-                    if (await confirm({ title: t('common.delete'), body: t('comments.deleteConfirm'), danger: true }))
-                      api(`/api/notes/${noteId}/comments/${c.id}`, { method: 'DELETE' }).then(refresh, toastError)
-                  }}
-                >
+                <MenuItem icon={<Trash2 />} danger onSelect={remove}>
                   {t('common.delete')}
                 </MenuItem>
               </MenuContent>
@@ -239,6 +263,7 @@ function Message({ c, noteId, refresh }: { c: NoteComment; noteId: string; refre
         )}
       </div>
     </div>
+    </ContextMenu>
   )
 }
 

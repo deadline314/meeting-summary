@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { AlarmClock, ChevronDown, ChevronRight, Copy, CopyPlus, GitBranch, Link2, Plus, Trash2, UserPlus } from 'lucide-react'
+import { AlarmClock, Ban, CheckSquare, ChevronDown, ChevronRight, Copy, CopyPlus, GitBranch, Link2, OctagonAlert, Plus, Trash2, UserPlus } from 'lucide-react'
 import { ContextMenu as CM } from 'radix-ui'
 import { AnimatePresence, motion } from 'motion/react'
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
@@ -11,6 +11,7 @@ import { useI18n, type MsgKey } from '../../lib/i18n'
 import { useMe } from '../../lib/session'
 import { AvatarStack } from '../../ui/avatar'
 import { Button, IconButton } from '../../ui/button'
+import { ContextMenu, CtxItem, CtxLabel } from '../../ui/context-menu'
 import { cx } from '../../ui/cx'
 import { confirm } from '../../ui/dialog'
 import { Kbd, Skeleton } from '../../ui/misc'
@@ -21,12 +22,12 @@ import { openDuplicate } from './duplicate-issue'
 import { openRelate } from './relate'
 import { useUnreadIssues } from '../../app/notifications'
 import { IssueStatusIcon, PriorityIcon } from './icons'
-import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, readNav, rememberNav, useProjects, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
+import { STATUSES, canWrite, confirmBlocked, invalidateIssues, isDone, patchIssue, readNav, rememberNav, useProjects, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
 import { LabelChip, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 /** A project, my issues, or (neither) every project I can see. */
 export type Scope = { key?: string; mine?: boolean }
-export type Filters = { assigneeId?: string; priority?: string; labelId?: string; q?: string; sort?: string; due?: string; project?: string; statuses?: string }
+export type Filters = { assigneeId?: string; priority?: string; labelId?: string; q?: string; sort?: string; due?: string; blocking?: string; project?: string; statuses?: string }
 
 const PAGE = 50
 const base = (s: Scope) => (s.key ? `/api/projects/${s.key}` : s.mine ? '/api/my-issues' : '/api/issues')
@@ -76,6 +77,7 @@ const useView = () => useContext(ViewCtx)!
 
 /** Optimistic edit: patch every cached copy, send, roll back on failure (409 → refetch + toast). */
 export async function applyPatch(rows: IssueRow[], patch: IssuePatch, t: (k: MsgKey, p?: Record<string, string | number>) => string) {
+  if (!(await confirmBlocked(rows, patch.status, t))) return
   const refs = new Set(rows.map((r) => r.ref))
   const snapshot = queryClient.getQueriesData<InfiniteData<{ items: IssueRow[]; total: number }>>({ queryKey: ['issues'] })
   queryClient.setQueriesData<InfiniteData<{ items: IssueRow[]; total: number }>>({ queryKey: ['issues'] }, (d) =>
@@ -97,7 +99,15 @@ export async function applyPatch(rows: IssueRow[], patch: IssuePatch, t: (k: Msg
   }
 }
 
-export function ViewProvider({ scope, role, labels, memberIds, children }: { scope: Scope; role?: Access; labels: Label[]; memberIds?: string[]; children: ReactNode }) {
+export function ViewProvider({ scope: scopeProp, role, labels, memberIds: memberProp, children }: { scope: Scope; role?: Access; labels: Label[]; memberIds?: string[]; children: ReactNode }) {
+  // Callers pass fresh objects on every render; keep them stable so the context (and every row
+  // that reads it) only changes when the values do.
+  const scopeKey = JSON.stringify(scopeProp)
+  const memberKey = memberProp?.join()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const scope = useMemo(() => scopeProp, [scopeKey])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const memberIds = useMemo(() => memberProp, [memberKey])
   // Coming back from a detail page: select the issue that was open (scroll is restored by the router).
   const [cursor, setCursor] = useState<string | null>(() => {
     const n = readNav()
@@ -383,6 +393,7 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
           <Prefix issue={issue} />
           <UnreadDot id={issue.id} />
           <span className="truncate">{issue.title}</span>
+          <BlockBadges issue={issue} />
           <StaleBadge issue={issue} />
           {issue.subProgress && (
             <span className="shrink-0 rounded bg-surface-2 px-1 text-[11px] text-fg-4">
@@ -431,37 +442,68 @@ export function StaleBadge({ issue, withText }: { issue: Pick<IssueRow, 'status'
   )
 }
 
-/** "Blocker title +N ⃠" (warm) and "Parent ›" prefixes; blockers only count while unfinished. */
-function Prefix({ issue }: { issue: IssueRow }) {
+/**
+ * "Blocked by N" (warning) and "Blocks N" (neutral) chips. Only unfinished issues count, and a
+ * finished issue shows neither. Hover lists them; clicking opens the first one.
+ */
+export function BlockBadges({ issue }: { issue: Pick<IssueRow, 'blockedBy' | 'hiddenBlockers' | 'blocks' | 'status'> }) {
+  const { t } = useI18n()
   const navigate = useNavigate()
-  if (issue.blockedBy.length) {
-    const first = issue.blockedBy[0]!
-    return (
-      <Tooltip
-        label={
-          <span className="flex flex-col">
-            {issue.blockedBy.slice(0, 5).map((b) => (
-              <span key={b.ref}>
-                {b.ref} {b.title}
-              </span>
-            ))}
-          </span>
-        }
-      >
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            navigate({ to: `/projects/${first.ref.split('-')[0]}/${first.ref}` })
-          }}
-          className="flex max-w-48 shrink-0 items-center gap-1 rounded-md bg-warning-soft px-1.5 text-xs text-warning"
-        >
-          <span className="truncate">{first.title}</span>
-          {issue.blockedBy.length > 1 && <span>+{issue.blockedBy.length - 1}</span>}
-          <span aria-hidden>⃠</span>
-        </button>
-      </Tooltip>
-    )
+  if (isDone(issue.status)) return null
+  const blocked = issue.blockedBy.length + issue.hiddenBlockers
+  const chip = 'inline-flex h-5 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium [&_svg]:size-3.5'
+  const open = (list: { ref: string }[]) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const ref = list[0]?.ref
+    if (ref) navigate({ to: `/projects/${ref.split('-')[0]}/${ref}` })
   }
+  return (
+    <>
+      {blocked > 0 && (
+        <Tooltip label={<RefList title={t('pm.block.blockedBy')} items={issue.blockedBy} hidden={issue.hiddenBlockers} />}>
+          <button type="button" onClick={open(issue.blockedBy)} className={cx(chip, 'bg-warning-soft text-warning')}>
+            <Ban />
+            {/* Phones: icon and count only, so the title keeps its room. */}
+            <span className="max-md:sr-only">{t('pm.block.blocked', { n: blocked })}</span>
+            <span className="md:hidden" aria-hidden>
+              {blocked}
+            </span>
+          </button>
+        </Tooltip>
+      )}
+      {issue.blocks.length > 0 && (
+        <Tooltip label={<RefList title={t('pm.block.blocking')} items={issue.blocks} hidden={0} />}>
+          <button type="button" onClick={open(issue.blocks)} className={cx(chip, 'bg-surface-2 text-fg-3')}>
+            <OctagonAlert />
+            <span className="max-md:sr-only">{t('pm.block.blocks', { n: issue.blocks.length })}</span>
+            <span className="md:hidden" aria-hidden>
+              {issue.blocks.length}
+            </span>
+          </button>
+        </Tooltip>
+      )}
+    </>
+  )
+}
+
+function RefList({ title, items, hidden }: { title: string; items: { ref: string; title: string }[]; hidden: number }) {
+  const { t } = useI18n()
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="font-semibold">{title}</span>
+      {items.slice(0, 6).map((b) => (
+        <span key={b.ref}>
+          {b.ref} {b.title}
+        </span>
+      ))}
+      {items.length > 6 && <span>+{items.length - 6}</span>}
+      {hidden > 0 && <span>{t('pm.block.hidden', { n: hidden })}</span>}
+    </span>
+  )
+}
+
+/** "Parent ›" prefix. */
+function Prefix({ issue }: { issue: IssueRow }) {
   if (issue.parent)
     return (
       <span className="flex max-w-40 shrink-0 items-center gap-1 text-xs text-fg-4">
@@ -694,6 +736,7 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
     const ref = e.dataTransfer.getData('text/issue')
     const issue = v.all().find((i) => i.ref === ref)
     if (!issue || !editable) return
+    if (!(await confirmBlocked([issue], status, t))) return
     const list = rows.filter((r) => r.ref !== ref)
     const before = list[index - 1]?.ref ?? null
     const after = list[index]?.ref ?? null
@@ -720,8 +763,27 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
     }
   }
 
+  const columnMenu = (
+    <>
+      <CtxLabel>{t(`status.${status}` as MsgKey)}</CtxLabel>
+      {editable && v.scope.key && (
+        <CtxItem icon={<Plus />} onSelect={() => openCreateIssue({ projectKey: v.scope.key, status })}>
+          {t('ctx.newInColumn')}
+        </CtxItem>
+      )}
+      <CtxItem icon={expanded ? <ChevronRight /> : <ChevronDown />} onSelect={onToggle}>
+        {expanded ? t('ctx.collapseColumn') : t('ctx.expandColumn')}
+      </CtxItem>
+      {expanded && rows.length > 0 && (
+        <CtxItem icon={<CheckSquare />} onSelect={() => rows.forEach((r) => !v.checked.has(r.ref) && v.toggleChecked(r.ref))}>
+          {t('ctx.selectColumn', { n: rows.length })}
+        </CtxItem>
+      )}
+    </>
+  )
   if (!expanded)
     return (
+      <ContextMenu menu={columnMenu}>
       <button
         data-column={status}
         onClick={onToggle}
@@ -738,6 +800,7 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
         <span className="[writing-mode:vertical-rl]">{t(`status.${status}` as MsgKey)}</span>
         <span className="text-fg-4">{total}</span>
       </button>
+      </ContextMenu>
     )
   return (
     <div
@@ -752,6 +815,7 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
       }}
       onDrop={(e) => onDrop(e, over?.index ?? rows.length)}
     >
+      <ContextMenu menu={columnMenu}>
       <div className="flex h-11 items-center gap-2 px-3">
         <button onClick={onToggle} className="flex items-center gap-2 text-[13px] font-semibold">
           <IssueStatusIcon status={status} />
@@ -763,6 +827,7 @@ function Column({ status, filters, total, expanded, onToggle }: { status: Status
         <div className="flex-1" />
         {editable && v.scope.key && <IconButton label={t('pm.newHint', { status: t(`status.${status}` as MsgKey) })} icon={<Plus />} size="sm" onClick={() => openCreateIssue({ projectKey: v.scope.key, status })} />}
       </div>
+      </ContextMenu>
       <div className="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
         {rows.map((i, idx) => (
           <div
@@ -823,6 +888,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
     const col = x === undefined || y === undefined ? null : columnAt(x, y)
     const status = col?.dataset.column as Status | undefined
     if (!status || status === issue.status) return
+    if (!(await confirmBlocked([issue], status, t))) return
     try {
       await api(`/api/issues/${issue.ref}/move`, { method: 'POST', body: { version: issue.version, status, beforeRef: null, afterRef: null } })
     } catch (err) {
@@ -894,6 +960,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
         <div className={cx('flex flex-wrap items-center gap-1', issue.status === 'canceled' && 'text-fg-4 line-through')}>
           <Prefix issue={issue} />
           <span className="leading-snug">{issue.title}</span>
+          <BlockBadges issue={issue} />
           <StaleBadge issue={issue} />
         </div>
         {issue.labels.length > 0 && (

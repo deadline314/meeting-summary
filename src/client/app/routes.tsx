@@ -75,6 +75,7 @@ export function appRoutes(parent: AnyRoute) {
     q: z.string().optional(),
     sort: z.string().optional(),
     due: z.enum(['overdue', 'week', 'none']).optional(),
+    blocking: z.enum(['blocked', 'blocking']).optional(),
     statuses: z.string().optional(),
     project: z.string().optional(),
     all: z.coerce.boolean().optional(),

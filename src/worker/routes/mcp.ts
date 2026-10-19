@@ -8,7 +8,7 @@ import { errorFields, log } from '../lib/log'
 import { authenticateKey } from '../services/api-keys'
 import { addIssueComment, batchUpdate, createIssue, duplicateIssue, getIssue, idempotent, issueDetail, listIssues, updateIssue } from '../services/issues'
 import { createNote, getNote, listNotes, noteMarkdown } from '../services/notes'
-import { access, addMember, createProject, listProjects, projectDto, setProjectState } from '../services/projects'
+import { access, addMembers, createProject, listProjects, projectDto, setProjectState } from '../services/projects'
 import { directory } from '../services/users'
 import { listSubmissions, listTasks } from '../services/tasks'
 
@@ -43,7 +43,7 @@ const TOOLS: Tool[] = [
     'project_member_add',
     'Add a member to a project you own. Needs a "manage" key.',
     z.object({ key: z.string(), userId: z.string(), role: z.enum(['viewer', 'member', 'owner']).default('member') }),
-    async (ctx, a) => addMember(ctx, a.key, a.userId, a.role),
+    async (ctx, a) => addMembers(ctx, a.key, [a.userId], a.role),
   ),
   tool('project_close', 'Close (or reopen) a project.', z.object({ key: z.string(), reopen: z.boolean().default(false) }), async (ctx, a) => setProjectState(ctx, a.key, a.reopen ? 'reopen' : 'close')),
   tool(

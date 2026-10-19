@@ -76,16 +76,89 @@ export async function projectDto(ctx: Ctx, p: Project, role: Access) {
     .where(eq(projectMembers.projectId, p.id))
     .orderBy(asc(projectMembers.createdAt))
     .all()
-  return { ...p, role, members, private: members.length <= 1 }
+  // Breadcrumb and sub-projects: only the ones the caller can see (permissions are not inherited).
+  const visible = new Set(await visibleProjectIds(ctx))
+  const up = (await chainUp(ctx, p.parentId)).filter((x) => visible.has(x.id)).reverse()
+  const kids = (await ctx.db.select().from(projects).where(eq(projects.parentId, p.id)).orderBy(asc(projects.key)).all()).filter((x) => visible.has(x.id))
+  const kidIds = kids.map((k) => k.id)
+  const [counts, kidMembers] = kidIds.length
+    ? await Promise.all([
+        ctx.db
+          .select({ projectId: issues.projectId, n: sql<number>`count(*)` })
+          .from(issues)
+          .where(and(inArray(issues.projectId, kidIds), sql`${issues.status} not in ('done','canceled')`, sql`${issues.deletedAt} is null`))
+          .groupBy(issues.projectId)
+          .all(),
+        ctx.db.select({ projectId: projectMembers.projectId }).from(projectMembers).where(inArray(projectMembers.projectId, kidIds)).all(),
+      ])
+    : [[], []]
+  return {
+    ...p,
+    role,
+    members,
+    private: members.length <= 1,
+    ancestors: up.map((x) => ({ key: x.key, name: x.name })),
+    children: kids.map((k) => ({
+      key: k.key,
+      name: k.name,
+      state: k.state,
+      hiddenFromAdmins: k.hiddenFromAdmins,
+      openIssues: counts.find((c) => c.projectId === k.id)?.n ?? 0,
+      private: kidMembers.filter((m) => m.projectId === k.id).length <= 1,
+    })),
+  }
+}
+
+/** Projects form a tree of at most this many levels. */
+export const MAX_DEPTH = 5
+
+/** `id` and its ancestors, nearest first (bounded, so a corrupt loop can't spin). */
+async function chainUp(ctx: Pick<Ctx, 'db'>, id: string | null) {
+  if (!id) return []
+  const rows = await ctx.db.all<{ id: string; depth: number }>(sql`
+    with recursive up(id, depth) as (
+      select ${id}, 0
+      union all select p.parent_id, up.depth + 1 from projects p join up on p.id = up.id where p.parent_id is not null and up.depth < 20
+    )
+    select id, depth from up`)
+  const found = await ctx.db.select().from(projects).where(inArray(projects.id, rows.map((r) => r.id))).all()
+  return rows.map((r) => found.find((f) => f.id === r.id)).filter((x): x is Project => !!x)
+}
+
+/** `id` and every descendant with its distance from `id`. */
+async function subtree(ctx: Pick<Ctx, 'db'>, id: string) {
+  return ctx.db.all<{ id: string; depth: number }>(sql`
+    with recursive down(id, depth) as (
+      select ${id}, 0
+      union all select p.id, down.depth + 1 from projects p join down on p.parent_id = down.id where down.depth < 20
+    )
+    select id, depth from down`)
+}
+
+/** A new parent must be a project the caller works in, outside the moved subtree, within MAX_DEPTH. */
+async function checkParent(ctx: Ctx, parentId: string, movingId?: string) {
+  const { role } = await access(ctx, { id: parentId })
+  if (role === 'viewer') throw notFound()
+  const chain = await chainUp(ctx, parentId)
+  let height = 0
+  if (movingId) {
+    const below = await subtree(ctx, movingId)
+    if (below.some((b) => b.id === parentId)) throw new AppError('cycle', 422, 'A project cannot be moved under itself or its sub-projects')
+    height = Math.max(...below.map((b) => b.depth))
+  }
+  if (chain.length + 1 + height > MAX_DEPTH) throw new AppError('depth_exceeded', 422, `Projects can be nested at most ${MAX_DEPTH} levels`, { limit: String(MAX_DEPTH) })
 }
 
 const KEY_RE = /^[A-Z]{2,6}$/
 
-export async function createProject(ctx: Ctx, input: { key: string; name: string; description?: string; parentId?: string | null; targetDate?: number | null }) {
+export async function createProject(
+  ctx: Ctx,
+  input: { key: string; name: string; description?: string; parentId?: string | null; targetDate?: number | null; members?: { userId: string; role: ProjectRole }[]; copyParentMembers?: boolean },
+) {
   requireScope(ctx, 'manage')
   const key = input.key.toUpperCase()
   if (!KEY_RE.test(key)) throw new AppError('validation', 400, 'Key must be 2–6 letters', { field: 'key' })
-  if (input.parentId) await access(ctx, { id: input.parentId })
+  if (input.parentId) await checkParent(ctx, input.parentId)
   const taken = await ctx.db.select({ id: projects.id }).from(projects).where(eq(projects.key, key)).get()
   if (taken) throw new AppError('key_taken', 409, 'Key already in use')
   const now = Date.now()
@@ -106,10 +179,21 @@ export async function createProject(ctx: Ctx, input: { key: string; name: string
     updatedAt: now,
     version: 1,
   }
+  // Initial members: copied from the parent (same roles) and/or picked; the creator is always owner.
+  const roles = new Map<string, ProjectRole>()
+  if (input.parentId && input.copyParentMembers)
+    for (const m of await ctx.db.select().from(projectMembers).where(eq(projectMembers.projectId, input.parentId)).all()) roles.set(m.userId, m.role)
+  for (const m of input.members ?? []) roles.set(m.userId, m.role)
+  roles.delete(ctx.user.id)
+  const active = roles.size
+    ? new Set((await ctx.db.select({ id: users.id }).from(users).where(and(inArray(users.id, [...roles.keys()]), eq(users.status, 'active'))).all()).map((u) => u.id))
+    : new Set<string>()
+  const extra = [...roles].filter(([id]) => active.has(id))
   await ctx.db.batch([
     ctx.db.insert(projects).values(p),
     ctx.db.insert(projectMembers).values({ projectId: p.id, userId: ctx.user.id, role: 'owner', createdAt: now }),
-    activity(ctx, { entityType: 'project', entityId: p.id, action: 'created', data: { key, name: p.name }, projectId: p.id }),
+    ...extra.map(([userId, role], i) => ctx.db.insert(projectMembers).values({ projectId: p.id, userId, role, createdAt: now + i + 1 })),
+    activity(ctx, { entityType: 'project', entityId: p.id, action: 'created', data: { key, name: p.name, parentId: p.parentId }, projectId: p.id }),
   ])
   return p
 }
@@ -145,10 +229,7 @@ export async function updateProject(
   need(role, 'owner')
   // Only an owning member can hide the project from admins.
   if (patch.hiddenFromAdmins !== undefined && role !== 'owner') throw notFound()
-  if (patch.parentId) {
-    if (patch.parentId === p.id) throw new AppError('cycle', 422, 'A project cannot be its own parent')
-    await access(ctx, { id: patch.parentId })
-  }
+  if (patch.parentId) await checkParent(ctx, patch.parentId, p.id)
   const v = version ?? p.version
   const res = await ctx.db.batch([
     ctx.db
@@ -163,21 +244,25 @@ export async function updateProject(
 
 // ---------- members ----------
 
-export async function addMember(ctx: Ctx, key: string, userId: string, role: ProjectRole) {
+/** Adds people who are not members yet (existing members keep their role). */
+export async function addMembers(ctx: Ctx, key: string, userIds: string[], role: ProjectRole) {
   requireScope(ctx, 'manage')
   const { project: p, role: mine } = await access(ctx, { key })
   need(mine, 'owner')
-  const u = await ctx.db.select().from(users).where(and(eq(users.id, userId), eq(users.status, 'active'))).get()
-  if (!u) throw notFound()
-  const before = await memberCount(ctx, p.id)
-  await ctx.db.batch([
-    ctx.db
-      .insert(projectMembers)
-      .values({ projectId: p.id, userId, role, createdAt: Date.now() })
-      .onConflictDoUpdate({ target: [projectMembers.projectId, projectMembers.userId], set: { role } }),
-    activity(ctx, { entityType: 'project', entityId: p.id, action: 'member_added', data: { key: p.key, userId, role }, projectId: p.id }),
-  ])
-  return { becameShared: before <= 1 && (await memberCount(ctx, p.id)) >= 2 }
+  const ids = [...new Set(userIds)]
+  const found = await ctx.db.select({ id: users.id }).from(users).where(and(inArray(users.id, ids), eq(users.status, 'active'))).all()
+  if (found.length !== ids.length) throw notFound()
+  const current = new Set((await ctx.db.select({ userId: projectMembers.userId }).from(projectMembers).where(eq(projectMembers.projectId, p.id)).all()).map((m) => m.userId))
+  const fresh = ids.filter((id) => !current.has(id))
+  const now = Date.now()
+  const [first, ...rest] = fresh
+  if (first)
+    await ctx.db.batch([
+      ctx.db.insert(projectMembers).values({ projectId: p.id, userId: first, role, createdAt: now }).onConflictDoNothing(),
+      ...rest.map((userId, i) => ctx.db.insert(projectMembers).values({ projectId: p.id, userId, role, createdAt: now + i + 1 }).onConflictDoNothing()),
+      ...fresh.map((userId) => activity(ctx, { entityType: 'project', entityId: p.id, action: 'member_added', data: { key: p.key, userId, role }, projectId: p.id }, now)),
+    ])
+  return { added: fresh, becameShared: current.size <= 1 && current.size + fresh.length >= 2 }
 }
 
 export async function setMemberRole(ctx: Ctx, key: string, userId: string, role: ProjectRole) {
@@ -199,7 +284,7 @@ async function assertNotLastOwner(ctx: Ctx, projectId: string) {
     .from(projectMembers)
     .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.role, 'owner')))
     .get()
-  if ((r?.n ?? 0) <= 1) throw new AppError('last_owner', 422, 'The last owner cannot be demoted or removed')
+  if ((r?.n ?? 0) <= 1) throw new AppError('last_project_owner', 422, 'The last owner cannot be demoted or removed')
 }
 
 /** Removing a member also drops their assignments and reviewer role in the project. */
@@ -261,6 +346,8 @@ export async function deleteProject(ctx: Ctx, key: string, confirmKey: string) {
     ctx.db.delete(issues).where(eq(issues.projectId, p.id)),
     ctx.db.delete(labels).where(eq(labels.projectId, p.id)),
     ctx.db.delete(projectMembers).where(eq(projectMembers.projectId, p.id)),
+    // Sub-projects move up to the top level.
+    ctx.db.update(projects).set({ parentId: null }).where(eq(projects.parentId, p.id)),
     ctx.db.delete(projects).where(eq(projects.id, p.id)),
     activity(ctx, { entityType: 'project', entityId: p.id, action: 'deleted', data: { key: p.key, name: p.name } }),
   ])

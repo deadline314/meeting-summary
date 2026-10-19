@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, ExternalLink, FileCode2, FileText, Film, HardDrive, Image as ImageIcon, Link2, Paperclip, Trash2, Upload, X } from 'lucide-react'
+import { Download, ExternalLink, Eye, FileCode2, FileText, Film, HardDrive, Image as ImageIcon, Link2, Paperclip, Trash2, Upload, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useRef, useState, type DragEvent } from 'react'
 import { api } from '../../lib/api'
@@ -7,6 +7,7 @@ import { useI18n } from '../../lib/i18n'
 import { useMe, isAdminRole } from '../../lib/session'
 import { compressImage, fileUrl, uploadFile, type Uploaded } from '../../lib/upload'
 import { Button, IconButton } from '../../ui/button'
+import { ContextMenu, CtxItem, CtxLabel, CtxSeparator, copyText, siteLink } from '../../ui/context-menu'
 import { cx } from '../../ui/cx'
 import { confirm } from '../../ui/dialog'
 import { Input } from '../../ui/field'
@@ -112,7 +113,12 @@ export function FilesPanel({ parentType, parentId, canUpload = true, onDriveLink
           {list.data?.map((f) => {
             const Icon = iconFor(f)
             const canDelete = f.ownerId === me.id || isAdminRole(me.role)
+            const open = () => (f.kind === 'drive' ? window.open(f.driveUrl!, '_blank', 'noopener') : isPreviewable(f) ? setPreview(f) : (location.href = `${fileUrl(f.id)}?download=1`))
+            const remove = async () => {
+              if (await confirm({ title: t('common.delete'), body: t('files.deleteConfirm', { name: f.name }), danger: true })) api(`/api/files/${f.id}`, { method: 'DELETE' }).then(refresh, toastError)
+            }
             return (
+              <FileContextMenu key={f.id} f={f} onOpen={open} onDelete={canDelete ? remove : undefined}>
               <motion.li key={f.id} layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="group flex items-center gap-2.5 rounded-xl border border-line bg-surface p-2.5">
                 {f.kind === 'image' ? (
                   <img src={fileUrl(f.id)} alt="" className="size-10 shrink-0 rounded-lg border border-line object-cover" loading="lazy" />
@@ -121,7 +127,7 @@ export function FilesPanel({ parentType, parentId, canUpload = true, onDriveLink
                     <Icon className="size-5" />
                   </span>
                 )}
-                <button className="min-w-0 flex-1 text-left" onClick={() => (f.kind === 'drive' ? window.open(f.driveUrl!, '_blank', 'noopener') : isPreviewable(f) ? setPreview(f) : (location.href = `${fileUrl(f.id)}?download=1`))}>
+                <button className="min-w-0 flex-1 text-left" onClick={open}>
                   <div className="truncate text-sm font-medium hover:text-accent-text">{f.name}</div>
                   <div className="truncate text-xs text-fg-4">{f.kind === 'drive' ? [driveKind(f.driveUrl ?? '') === f.name ? 'Google Drive' : driveKind(f.driveUrl ?? ''), f.driveOwner].filter(Boolean).join(' · ') : `${fmt.bytes(f.size)} · ${fmt.relative(f.createdAt)}`}</div>
                 </button>
@@ -136,13 +142,11 @@ export function FilesPanel({ parentType, parentId, canUpload = true, onDriveLink
                     icon={<Trash2 />}
                     size="sm"
                     className="opacity-60 group-hover:opacity-100"
-                    onClick={async () => {
-                      if (await confirm({ title: t('common.delete'), body: t('files.deleteConfirm', { name: f.name }), danger: true }))
-                        api(`/api/files/${f.id}`, { method: 'DELETE' }).then(refresh, toastError)
-                    }}
+                    onClick={remove}
                   />
                 )}
               </motion.li>
+              </FileContextMenu>
             )
           })}
         </AnimatePresence>
@@ -150,6 +154,41 @@ export function FilesPanel({ parentType, parentId, canUpload = true, onDriveLink
       {!canUpload && !pending.length && list.data?.length === 0 && <EmptyState icon={<Paperclip />} title={t('files.empty')} />}
       {preview && <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />}
     </div>
+  )
+}
+
+/** Right-click on an attachment: open, download, copy link, delete (owner or staff). */
+export function FileContextMenu({ f, onOpen, onDelete, children }: { f: Pick<FileRow, 'id' | 'name' | 'kind' | 'driveUrl'>; onOpen(): void; onDelete?: () => void; children: React.ReactNode }) {
+  const { t } = useI18n()
+  return (
+    <ContextMenu
+      menu={
+        <>
+          <CtxLabel>{f.name}</CtxLabel>
+          <CtxItem icon={<Eye />} onSelect={onOpen}>
+            {t('ctx.open')}
+          </CtxItem>
+          {f.kind !== 'drive' && (
+            <CtxItem icon={<Download />} onSelect={() => (location.href = `${fileUrl(f.id)}?download=1`)}>
+              {t('files.download')}
+            </CtxItem>
+          )}
+          <CtxItem icon={<Link2 />} onSelect={() => copyText(f.kind === 'drive' ? f.driveUrl! : siteLink(fileUrl(f.id)), t('common.copied'))}>
+            {t('pm.copyLink')}
+          </CtxItem>
+          {onDelete && (
+            <>
+              <CtxSeparator />
+              <CtxItem icon={<Trash2 />} danger onSelect={onDelete}>
+                {t('common.delete')}
+              </CtxItem>
+            </>
+          )}
+        </>
+      }
+    >
+      {children}
+    </ContextMenu>
   )
 }
 

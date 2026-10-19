@@ -40,8 +40,9 @@ test('projects: create, members, issues, list, board, detail', async ({ page, br
   await page.getByRole('tab', { name: '成員' }).click()
   await page.getByRole('button', { name: '加入成員' }).click()
   await page.getByRole('button', { name: bobName }).click()
-  await expect(page.getByText('專案變為共享')).toBeVisible()
   await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '加入 1 人' }).click()
+  await expect(page.getByText('專案變為共享')).toBeVisible()
   await shot(page, info, 'MS-26', 'members')
   await page.keyboard.press('Escape')
 
@@ -79,7 +80,7 @@ test('projects: create, members, issues, list, board, detail', async ({ page, br
   await page.getByLabel('建立關聯').selectOption('blocks')
   await page.getByLabel('輸入議題編號或標題').fill('實驗報告')
   await page.getByRole('button', { name: /撰寫實驗報告/ }).click()
-  await expect(page.getByText('擋住').first()).toBeVisible()
+  await expect(page.getByText('阻擋', { exact: true }).first()).toBeVisible()
   await page.getByPlaceholder(/留言…/).fill('資料集已上傳到 Drive，請 @ 大家確認格式')
   await page.getByRole('button', { name: '送出' }).click()
   await expect(page.getByText('資料集已上傳到 Drive').first()).toBeVisible()
@@ -88,7 +89,7 @@ test('projects: create, members, issues, list, board, detail', async ({ page, br
 
   // The blocked issue shows the warm prefix in the list.
   await page.goto(`/projects/${key}`)
-  await expect(page.locator('li', { hasText: '撰寫實驗報告' }).getByText('整理資料集並切分').first()).toBeVisible()
+  await expect(page.locator('li', { hasText: '撰寫實驗報告' }).getByRole('button', { name: '被阻擋 1' })).toBeVisible()
   await shot(page, info, 'MS-34', 'blocked-prefix')
 
   // Board + drag (desktop).
@@ -97,6 +98,8 @@ test('projects: create, members, issues, list, board, detail', async ({ page, br
   if (!mobile) {
     const card = page.locator('[data-ref]', { hasText: '撰寫實驗報告' }).first()
     await card.dragTo(page.locator('[data-column="in_review"]'))
+    // It is still blocked, so moving it forward asks first.
+    await page.getByRole('dialog').getByRole('button', { name: '仍要變更' }).click()
     // The folded "In review" column opens once it holds an issue.
     await page.reload()
     await expect(page.locator('[data-column="in_review"] [data-ref]', { hasText: '撰寫實驗報告' })).toBeVisible()

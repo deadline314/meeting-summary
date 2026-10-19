@@ -83,7 +83,7 @@ describe('projects & issues', () => {
   it('last owner stays; removing a member clears their assignments', async () => {
     const { a, aId, k } = await setup()
     const last = await a.call<{ error: { code: string } }>(`/api/projects/${k}/members/${aId}`, { method: 'PATCH', body: { role: 'member' } })
-    expect(last.body.error.code).toBe('last_owner')
+    expect(last.body.error.code).toBe('last_project_owner')
     const b = await login(uniq('pc'))
     const bId = (await b.call<{ user: { id: string } }>('/api/me')).body.user.id
     await a.call(`/api/projects/${k}/members`, { method: 'POST', body: { userId: bId } })

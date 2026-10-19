@@ -4,6 +4,7 @@ import { isAdmin, requireScope } from '../context'
 import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, files, idempotency, issueSubscriptions, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, projects, references } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { AppError, badRequest, conflict, notFound } from '../lib/errors'
+import { errorFields, log } from '../lib/log'
 import { activity } from './activity'
 import { limits, parentChecks, usedBytes } from './files'
 import { mentionedUserIds, notify } from './notify'
@@ -69,7 +70,7 @@ export async function setSubscribed(ctx: Ctx, ref: string, on: boolean) {
 export async function hydrate(ctx: Ctx, rows: Issue[], keyById: Map<string, string>) {
   if (!rows.length) return []
   const ids = rows.map((r) => r.id)
-  const [assignees, labelRows, blockers, children, parents] = await Promise.all([
+  const [assignees, labelRows, blockers, blocking, children, parents, visibleIds] = await Promise.all([
     ctx.db.select().from(issueAssignees).where(inArray(issueAssignees.issueId, ids)).orderBy(asc(issueAssignees.position)).all(),
     ctx.db
       .select({ issueId: issueLabels.issueId, id: labels.id, name: labels.name, color: labels.color })
@@ -84,6 +85,13 @@ export async function hydrate(ctx: Ctx, rows: Issue[], keyById: Map<string, stri
       .innerJoin(issues, eq(issues.id, issueRelations.fromId))
       .where(and(inArray(issueRelations.toId, ids), eq(issueRelations.type, 'blocks'), sql`${issues.status} not in ('done','canceled')`, isNull(issues.deletedAt)))
       .all(),
+    // ...and the unfinished issues each one blocks.
+    ctx.db
+      .select({ fromId: issueRelations.fromId, id: issues.id, number: issues.number, title: issues.title, projectId: issues.projectId })
+      .from(issueRelations)
+      .innerJoin(issues, eq(issues.id, issueRelations.toId))
+      .where(and(inArray(issueRelations.fromId, ids), eq(issueRelations.type, 'blocks'), sql`${issues.status} not in ('done','canceled')`, isNull(issues.deletedAt)))
+      .all(),
     ctx.db
       .select({ parentId: issues.parentId, done: sql<number>`sum(case when ${issues.status} in ('done','canceled') then 1 else 0 end)`, total: sql<number>`count(*)` })
       .from(issues)
@@ -95,8 +103,14 @@ export async function hydrate(ctx: Ctx, rows: Issue[], keyById: Map<string, stri
       .from(issues)
       .where(inArray(issues.id, rows.map((r) => r.parentId).filter((x): x is string => !!x)))
       .all(),
+    visibleProjectIds(ctx),
   ])
+  // Other ends may live in other projects: resolve their keys, and never show ones the caller can't see.
+  const visible = new Set(visibleIds)
+  const missing = [...new Set([...blockers, ...blocking].map((b) => b.projectId))].filter((id) => !keyById.has(id) && visible.has(id))
+  if (missing.length) for (const [id, key] of await keyMap(ctx, missing)) keyById.set(id, key)
   const keyOf = (pid: string) => keyById.get(pid) ?? '?'
+  const refs = (list: { projectId: string; number: number; title: string }[]) => list.filter((b) => visible.has(b.projectId)).map((b) => ({ ref: `${keyOf(b.projectId)}-${b.number}`, title: b.title }))
   return rows.map((r) => {
     const parent = parents.find((p) => p.id === r.parentId)
     const sub = children.find((c) => c.parentId === r.id)
@@ -106,7 +120,9 @@ export async function hydrate(ctx: Ctx, rows: Issue[], keyById: Map<string, stri
       projectKey: keyOf(r.projectId),
       assigneeIds: assignees.filter((a) => a.issueId === r.id).map((a) => a.userId),
       labels: labelRows.filter((l) => l.issueId === r.id).map(({ issueId: _i, ...l }) => l),
-      blockedBy: blockers.filter((b) => b.toId === r.id).map((b) => ({ ref: `${keyOf(b.projectId)}-${b.number}`, title: b.title })),
+      blockedBy: refs(blockers.filter((b) => b.toId === r.id)),
+      hiddenBlockers: blockers.filter((b) => b.toId === r.id && !visible.has(b.projectId)).length,
+      blocks: refs(blocking.filter((b) => b.fromId === r.id)),
       parent: parent ? { ref: `${keyOf(parent.projectId)}-${parent.number}`, title: parent.title } : null,
       subProgress: sub ? { done: Number(sub.done), total: Number(sub.total) } : null,
     }
@@ -128,6 +144,8 @@ export type IssueFilter = {
   sort?: 'manual' | 'created' | 'updated' | 'priority' | 'due'
   /** overdue = past due and unfinished; week = due within 7 days; none = no due date. */
   due?: 'overdue' | 'week' | 'none'
+  /** blocked = has an unfinished blocker; blocking = blocks an unfinished issue. */
+  blocking?: 'blocked' | 'blocking'
   doneSince?: number
   offset: number
   limit: number
@@ -161,6 +179,12 @@ function issueWhere(ctx: Ctx, projectIds: string[], scope: { mine?: boolean }, f
     f.due === 'none' ? isNull(issues.dueAt) : undefined,
     f.due === 'overdue' ? and(lt(issues.dueAt, Date.now()), sql`${issues.status} not in ('done','canceled')`) : undefined,
     f.due === 'week' ? and(gt(issues.dueAt, Date.now()), lt(issues.dueAt, Date.now() + 7 * 86400_000)) : undefined,
+    f.blocking === 'blocked'
+      ? sql`exists (select 1 from issue_relations r join issues b on b.id = r.from_id where r.to_id = ${issues.id} and r.type = 'blocks' and b.status not in ('done','canceled') and b.deleted_at is null)`
+      : undefined,
+    f.blocking === 'blocking'
+      ? sql`exists (select 1 from issue_relations r join issues b on b.id = r.to_id where r.from_id = ${issues.id} and r.type = 'blocks' and b.status not in ('done','canceled') and b.deleted_at is null)`
+      : undefined,
   )
 }
 
@@ -369,7 +393,7 @@ async function assertParent(ctx: Ctx, issueId: string | null, parentId: string) 
     if (cur === issueId) throw new AppError('cycle', 422, 'That would create a cycle')
     const row: { parentId: string | null } | undefined = await ctx.db.select({ parentId: issues.parentId }).from(issues).where(eq(issues.id, cur)).get()
     cur = row?.parentId ?? null
-    if (++depth > MAX_DEPTH) throw new AppError('depth_exceeded', 422, 'More than 10 levels')
+    if (++depth > MAX_DEPTH) throw new AppError('depth_exceeded', 422, 'More than 10 levels', { limit: String(MAX_DEPTH) })
   }
 }
 
@@ -486,6 +510,7 @@ export async function updateIssue(ctx: Ctx, ref: string, version: number, patch:
   if (res[0].meta.changes === 0) throw conflict()
   if (newAssignees.length) notify(ctx, newAssignees, { type: 'issue_assigned', entityType: 'issue', entityId: issue.id, data: { ref, title: set.title ?? issue.title }, projectId: project.id })
   if (set.status) notify(ctx, await subscribers(ctx, issue.id), { type: 'issue_status', entityType: 'issue', entityId: issue.id, data: { ref, title: issue.title, to: set.status }, projectId: project.id })
+  if (set.status && DONE.includes(set.status) && !DONE.includes(issue.status)) await notifyUnblocked(ctx, issue.id, ref)
   if (patch.description !== undefined) await syncReferences(ctx, 'issue', issue.id, patch.description, ref)
   return { ...issue, ...set, ref }
 }
@@ -695,10 +720,44 @@ export async function addRelation(ctx: Ctx, ref: string, type: 'blocks' | 'block
   const b = await getIssue(ctx, targetRef)
   if (a.issue.id === b.issue.id) throw badRequest('Cannot relate an issue to itself')
   const [fromId, toId, t] = type === 'blocked_by' ? [b.issue.id, a.issue.id, 'blocks' as const] : [a.issue.id, b.issue.id, type]
+  if (t === 'blocks' && (await blocksPath(ctx, toId, fromId))) throw new AppError('cycle', 422, 'These issues would block each other')
+  const now = Date.now()
   await ctx.db.batch([
-    ctx.db.insert(issueRelations).values({ fromId, toId, type: t, createdAt: Date.now() }).onConflictDoNothing(),
-    activity(ctx, { entityType: 'issue', entityId: a.issue.id, action: 'related', data: { ref, type, target: targetRef }, projectId: a.project.id }),
+    ctx.db.insert(issueRelations).values({ fromId, toId, type: t, createdAt: now }).onConflictDoNothing(),
+    activity(ctx, { entityType: 'issue', entityId: a.issue.id, action: 'related', data: { ref, type, target: targetRef }, projectId: a.project.id }, now),
+    activity(ctx, { entityType: 'issue', entityId: b.issue.id, action: 'related', data: { ref: targetRef, type: INVERSE[type], target: ref }, projectId: b.project.id }, now),
   ])
+}
+
+const INVERSE = { blocks: 'blocked_by', blocked_by: 'blocks', relates: 'relates', duplicate_of: 'duplicated_by', duplicated_by: 'duplicate_of' } as const
+
+/** Is there a chain of `blocks` edges from → … → to? (bounded walk) */
+async function blocksPath(ctx: Ctx, from: string, to: string) {
+  const r = await ctx.db.get<{ hit: number } | undefined>(sql`
+    with recursive walk(id, depth) as (
+      select ${from}, 0
+      union select r.to_id, walk.depth + 1 from issue_relations r join walk on r.from_id = walk.id where r.type = 'blocks' and walk.depth < 50
+    )
+    select 1 as hit from walk where id = ${to} limit 1`)
+  return !!r
+}
+
+/** After an issue is finished: tell people on each issue it blocked once nothing else blocks it. */
+async function notifyUnblocked(ctx: Ctx, issueId: string, ref: string) {
+  try {
+    const freed = await ctx.db.all<{ id: string; number: number; title: string; projectId: string; key: string }>(sql`
+      select i.id, i.number, i.title, i.project_id as projectId, p.key from issue_relations r
+      join issues i on i.id = r.to_id join projects p on p.id = i.project_id
+      where r.from_id = ${issueId} and r.type = 'blocks' and i.status not in ('done','canceled') and i.deleted_at is null
+        and not exists (select 1 from issue_relations r2 join issues b on b.id = r2.from_id
+                        where r2.to_id = i.id and r2.type = 'blocks' and b.status not in ('done','canceled') and b.deleted_at is null)`)
+    for (const f of freed) {
+      const who = [...(await subscribers(ctx, f.id)), ...(await ctx.db.select({ userId: issueAssignees.userId }).from(issueAssignees).where(eq(issueAssignees.issueId, f.id)).all()).map((a) => a.userId)]
+      notify(ctx, who, { type: 'issue_unblocked', entityType: 'issue', entityId: f.id, data: { ref: `${f.key}-${f.number}`, title: f.title, by: ref }, projectId: f.projectId })
+    }
+  } catch (err) {
+    log('warn', 'unblock notification failed', { issueId, ...errorFields(err) })
+  }
 }
 
 export async function removeRelation(ctx: Ctx, ref: string, type: 'blocks' | 'blocked_by' | 'relates' | 'duplicate_of' | 'duplicated_by', targetRef: string) {
@@ -710,6 +769,11 @@ export async function removeRelation(ctx: Ctx, ref: string, type: 'blocks' | 'bl
     type === 'blocked_by' ? [[b.issue.id, a.issue.id, 'blocks']] : type === 'duplicated_by' ? [[b.issue.id, a.issue.id, 'duplicate_of']] : type === 'relates' ? [[a.issue.id, b.issue.id, 'relates'], [b.issue.id, a.issue.id, 'relates']] : [[a.issue.id, b.issue.id, type]]
   for (const [f, t, ty] of pairs)
     await ctx.db.delete(issueRelations).where(and(eq(issueRelations.fromId, f!), eq(issueRelations.toId, t!), eq(issueRelations.type, ty as 'blocks')))
+  const now = Date.now()
+  await ctx.db.batch([
+    activity(ctx, { entityType: 'issue', entityId: a.issue.id, action: 'unrelated', data: { ref, type, target: targetRef }, projectId: a.project.id }, now),
+    activity(ctx, { entityType: 'issue', entityId: b.issue.id, action: 'unrelated', data: { ref: targetRef, type: INVERSE[type], target: ref }, projectId: b.project.id }, now),
+  ])
 }
 
 // ---------- comments & timeline ----------

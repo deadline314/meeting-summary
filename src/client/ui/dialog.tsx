@@ -134,7 +134,7 @@ export function ConfirmHost() {
         </>
       }
     >
-      {req?.body && <div className="text-sm leading-relaxed text-fg-2">{req.body}</div>}
+      {req?.body && <div className="text-sm leading-relaxed whitespace-pre-line text-fg-2">{req.body}</div>}
     </Dialog>
   )
 }

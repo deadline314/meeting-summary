@@ -75,7 +75,7 @@ export function UserPicker({
 }
 
 /** Inline chips of selected users with an add button. */
-export function UserChips({ value, onChange, single }: { value: string[]; onChange(ids: string[]): void; single?: boolean }) {
+export function UserChips({ value, onChange, single, filter }: { value: string[]; onChange(ids: string[]): void; single?: boolean; filter?: (id: string) => boolean }) {
   const t = useT()
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -93,6 +93,7 @@ export function UserChips({ value, onChange, single }: { value: string[]; onChan
       <UserPicker
         value={value}
         onChange={onChange}
+        filter={filter}
         multiple={!single}
         trigger={
           <button type="button" className="inline-flex h-8 items-center gap-1 rounded-full border border-dashed border-line-strong px-2.5 text-[13px] text-fg-3 hover:border-accent hover:text-accent-text">
