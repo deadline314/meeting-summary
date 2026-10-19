@@ -1,0 +1,235 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. This file is the ONLY place colour values may appear
+ * (scripts/check-colors.mjs enforces it). Components use the semantic
+ * utilities below: bg-canvas, bg-surface, text-fg-2, border-line, bg-accent …
+ */
+
+@custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
+
+@theme {
+  --color-*: initial;
+  --font-sans: ui-sans-serif, -apple-system, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Menlo, Consolas, monospace;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--t-canvas);
+  --color-surface: var(--t-surface);
+  --color-surface-2: var(--t-surface-2);
+  --color-surface-3: var(--t-surface-3);
+  --color-overlay: var(--t-overlay);
+  --color-line: var(--t-line);
+  --color-line-strong: var(--t-line-strong);
+  --color-fg: var(--t-fg);
+  --color-fg-2: var(--t-fg-2);
+  --color-fg-3: var(--t-fg-3);
+  --color-fg-4: var(--t-fg-4);
+  --color-accent: var(--t-accent);
+  --color-accent-hover: var(--t-accent-hover);
+  --color-accent-fg: var(--t-accent-fg);
+  --color-accent-soft: var(--t-accent-soft);
+  --color-accent-text: var(--t-accent-text);
+  --color-success: var(--t-success);
+  --color-success-soft: var(--t-success-soft);
+  --color-warning: var(--t-warning);
+  --color-warning-soft: var(--t-warning-soft);
+  --color-danger: var(--t-danger);
+  --color-danger-soft: var(--t-danger-soft);
+  --color-info: var(--t-info);
+  --color-info-soft: var(--t-info-soft);
+  --color-highlight: var(--t-highlight);
+  --color-white: var(--t-white);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+}
+
+:root {
+  --h: 268;
+  --c: 0.19;
+  color-scheme: light;
+  --t-canvas: oklch(0.985 0.004 var(--h));
+  --t-surface: oklch(1 0 0);
+  --t-surface-2: oklch(0.965 0.007 var(--h));
+  --t-surface-3: oklch(0.93 0.01 var(--h));
+  --t-overlay: oklch(0.2 0.02 var(--h) / 0.38);
+  --t-line: oklch(0.9 0.008 var(--h));
+  --t-line-strong: oklch(0.82 0.012 var(--h));
+  --t-fg: oklch(0.22 0.02 var(--h));
+  --t-fg-2: oklch(0.38 0.018 var(--h));
+  --t-fg-3: oklch(0.5 0.015 var(--h));
+  --t-fg-4: oklch(0.62 0.012 var(--h));
+  --t-accent: oklch(0.53 var(--c) var(--h));
+  --t-accent-hover: oklch(0.47 var(--c) var(--h));
+  --t-accent-fg: oklch(0.99 0 0);
+  --t-accent-soft: oklch(0.95 calc(var(--c) * 0.25) var(--h));
+  --t-accent-text: oklch(0.45 var(--c) var(--h));
+  --t-success: oklch(0.52 0.14 155);
+  --t-success-soft: oklch(0.95 0.04 155);
+  --t-warning: oklch(0.6 0.15 60);
+  --t-warning-soft: oklch(0.96 0.045 75);
+  --t-danger: oklch(0.55 0.2 25);
+  --t-danger-soft: oklch(0.95 0.035 25);
+  --t-info: oklch(0.55 0.15 240);
+  --t-info-soft: oklch(0.95 0.035 240);
+  --t-highlight: oklch(0.92 0.12 95 / 0.55);
+  --t-white: oklch(1 0 0);
+  --t-shadow: 0 1px 2px oklch(0.2 0.02 var(--h) / 0.06), 0 8px 24px -8px oklch(0.2 0.02 var(--h) / 0.12);
+  /* label palette: 8 hues, bg/fg pairs */
+  --t-label-1-bg: oklch(0.94 0.05 25);  --t-label-1-fg: oklch(0.45 0.16 25);
+  --t-label-2-bg: oklch(0.95 0.06 70);  --t-label-2-fg: oklch(0.47 0.12 60);
+  --t-label-3-bg: oklch(0.95 0.07 110); --t-label-3-fg: oklch(0.45 0.11 120);
+  --t-label-4-bg: oklch(0.94 0.05 160); --t-label-4-fg: oklch(0.43 0.11 160);
+  --t-label-5-bg: oklch(0.94 0.04 215); --t-label-5-fg: oklch(0.45 0.11 220);
+  --t-label-6-bg: oklch(0.94 0.04 265); --t-label-6-fg: oklch(0.45 0.16 265);
+  --t-label-7-bg: oklch(0.94 0.05 315); --t-label-7-fg: oklch(0.45 0.16 315);
+  --t-label-8-bg: oklch(0.93 0.01 260); --t-label-8-fg: oklch(0.42 0.02 260);
+  /* per-author colours (collaboration cursors, blame bars) */
+  --t-author-0: oklch(0.62 0.17 25);
+  --t-author-1: oklch(0.62 0.15 70);
+  --t-author-2: oklch(0.6 0.14 145);
+  --t-author-3: oklch(0.6 0.13 200);
+  --t-author-4: oklch(0.58 0.17 260);
+  --t-author-5: oklch(0.6 0.18 310);
+  --t-author-6: oklch(0.6 0.15 350);
+  --t-author-7: oklch(0.58 0.08 100);
+}
+
+[data-accent='indigo'] { --h: 268; --c: 0.19; }
+[data-accent='emerald'] { --h: 160; --c: 0.14; }
+[data-accent='amber'] { --h: 62; --c: 0.15; }
+[data-accent='rose'] { --h: 12; --c: 0.19; }
+[data-accent='slate'] { --h: 250; --c: 0.04; }
+
+[data-mode='dark'] {
+  color-scheme: dark;
+  --t-canvas: oklch(0.17 0.012 var(--h));
+  --t-surface: oklch(0.205 0.014 var(--h));
+  --t-surface-2: oklch(0.245 0.016 var(--h));
+  --t-surface-3: oklch(0.29 0.018 var(--h));
+  --t-overlay: oklch(0.05 0.01 var(--h) / 0.6);
+  --t-line: oklch(0.3 0.016 var(--h));
+  --t-line-strong: oklch(0.38 0.018 var(--h));
+  --t-fg: oklch(0.96 0.005 var(--h));
+  --t-fg-2: oklch(0.82 0.01 var(--h));
+  --t-fg-3: oklch(0.7 0.012 var(--h));
+  --t-fg-4: oklch(0.58 0.012 var(--h));
+  --t-accent: oklch(0.62 var(--c) var(--h));
+  --t-accent-hover: oklch(0.68 var(--c) var(--h));
+  --t-accent-fg: oklch(0.15 0.02 var(--h));
+  --t-accent-soft: oklch(0.3 calc(var(--c) * 0.45) var(--h));
+  --t-accent-text: oklch(0.78 calc(var(--c) * 0.8) var(--h));
+  --t-success: oklch(0.72 0.15 155);
+  --t-success-soft: oklch(0.3 0.06 155);
+  --t-warning: oklch(0.78 0.14 70);
+  --t-warning-soft: oklch(0.32 0.06 70);
+  --t-danger: oklch(0.7 0.17 25);
+  --t-danger-soft: oklch(0.3 0.07 25);
+  --t-info: oklch(0.72 0.12 240);
+  --t-info-soft: oklch(0.3 0.06 240);
+  --t-highlight: oklch(0.5 0.1 95 / 0.4);
+  --t-shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 10px 30px -10px oklch(0 0 0 / 0.55);
+  --t-label-1-bg: oklch(0.32 0.07 25);  --t-label-1-fg: oklch(0.85 0.09 25);
+  --t-label-2-bg: oklch(0.33 0.06 70);  --t-label-2-fg: oklch(0.86 0.1 75);
+  --t-label-3-bg: oklch(0.33 0.06 115); --t-label-3-fg: oklch(0.86 0.1 115);
+  --t-label-4-bg: oklch(0.32 0.05 160); --t-label-4-fg: oklch(0.85 0.09 160);
+  --t-label-5-bg: oklch(0.32 0.05 215); --t-label-5-fg: oklch(0.85 0.08 215);
+  --t-label-6-bg: oklch(0.32 0.07 265); --t-label-6-fg: oklch(0.85 0.09 265);
+  --t-label-7-bg: oklch(0.32 0.07 315); --t-label-7-fg: oklch(0.85 0.1 315);
+  --t-label-8-bg: oklch(0.32 0.01 260); --t-label-8-fg: oklch(0.85 0.01 260);
+  --t-author-0: oklch(0.72 0.15 25);
+  --t-author-1: oklch(0.78 0.13 70);
+  --t-author-2: oklch(0.74 0.13 145);
+  --t-author-3: oklch(0.74 0.11 200);
+  --t-author-4: oklch(0.72 0.14 260);
+  --t-author-5: oklch(0.74 0.15 310);
+  --t-author-6: oklch(0.74 0.13 350);
+  --t-author-7: oklch(0.76 0.08 100);
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--t-canvas);
+    color: var(--t-fg);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
+  }
+  *:focus-visible {
+    outline: 2px solid var(--t-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: var(--t-accent-soft);
+  }
+}
+
+@utility shadow-card {
+  box-shadow: var(--t-shadow);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Rendered markdown */
+.prose-md {
+  line-height: 1.75;
+  color: var(--t-fg);
+  overflow-wrap: anywhere;
+}
+.prose-md > * + * { margin-top: 0.75em; }
+.prose-md h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; margin-top: 0.4em; }
+.prose-md h2 { font-size: 1.25rem; font-weight: 650; margin-top: 1.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--t-line); }
+.prose-md h3 { font-size: 1.05rem; font-weight: 650; margin-top: 1.3em; }
+.prose-md ul { list-style: disc; padding-left: 1.4em; }
+.prose-md ol { list-style: decimal; padding-left: 1.4em; }
+.prose-md li + li { margin-top: 0.2em; }
+.prose-md li > ul, .prose-md li > ol { margin-top: 0.2em; }
+.prose-md a { color: var(--t-accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.prose-md code { font-family: var(--font-mono); font-size: 0.88em; background: var(--t-surface-2); padding: 0.1em 0.35em; border-radius: 5px; }
+.prose-md pre { background: var(--t-surface-2); border: 1px solid var(--t-line); border-radius: 10px; padding: 0.9em 1em; overflow-x: auto; }
+.prose-md pre code { background: none; padding: 0; }
+.prose-md blockquote { border-left: 3px solid var(--t-line-strong); padding-left: 1em; color: var(--t-fg-3); }
+.prose-md table { width: 100%; border-collapse: collapse; font-size: 0.92em; display: block; overflow-x: auto; }
+.prose-md th, .prose-md td { border: 1px solid var(--t-line); padding: 0.45em 0.7em; text-align: left; vertical-align: top; }
+.prose-md th { background: var(--t-surface-2); font-weight: 600; white-space: nowrap; }
+.prose-md img { max-width: 100%; border-radius: 10px; border: 1px solid var(--t-line); cursor: zoom-in; }
+.prose-md hr { border: 0; border-top: 1px solid var(--t-line); }
+.prose-md input[type='checkbox'] { accent-color: var(--t-accent); margin-right: 0.4em; }
+.prose-md mark.comment-mark { background: var(--t-highlight); color: inherit; border-radius: 3px; cursor: pointer; }
+.prose-md mark.comment-mark.active { outline: 2px solid var(--t-warning); }
+
+/* Enter/exit animations for Radix layers (keyed on data-state). */
+@keyframes pop-in { from { opacity: 0; transform: scale(0.96) translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.97); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes sheet-out { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.anim-pop[data-state='open'], .anim-pop[data-state='delayed-open'], .anim-pop[data-state='instant-open'] { animation: pop-in 160ms var(--ease-out-soft); }
+.anim-pop[data-state='closed'] { animation: pop-out 110ms ease-in; }
+.anim-fade[data-state='open'] { animation: fade-in 180ms ease-out; }
+.anim-fade[data-state='closed'] { animation: fade-out 140ms ease-in; }
+.anim-sheet[data-state='open'] { animation: sheet-in 240ms var(--ease-out-soft); }
+.anim-sheet[data-state='closed'] { animation: sheet-out 180ms ease-in; }
+.anim-rise { animation: rise 220ms var(--ease-out-soft) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

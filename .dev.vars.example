@@ -1,0 +1,12 @@
+# Copy to .dev.vars for local development.
+# Enables the "dev login" panel on localhost so you can test without Google OAuth.
+DEV_LOGIN=true
+# Comma-separated emails that become 老師 (owner) on login.
+OWNER_EMAILS=teacher@example.com
+# local = run grading in local Docker instead of GitHub Actions.
+GRADER_MODE=local
+# Optional: real Google OAuth (https://console.cloud.google.com/apis/credentials)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# Optional: fine-grained token with actions:write on GITHUB_REPO, for GRADER_MODE=github
+GITHUB_TOKEN=

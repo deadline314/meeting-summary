@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f8f8fc" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="description" content="Meeting notes, tasks and projects for the lab" />
+    <title>Lab Notes</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      // Apply the saved theme before first paint so dark-mode users never see a light flash.
+      try {
+        var t = JSON.parse(localStorage.getItem('ms.theme') || '{}')
+        var d = document.documentElement
+        d.dataset.accent = t.accent || 'indigo'
+        var dark = t.mode === 'dark' || ((!t.mode || t.mode === 'system') && matchMedia('(prefers-color-scheme: dark)').matches)
+        d.dataset.mode = dark ? 'dark' : 'light'
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/client/main.tsx"></script>
+  </body>
+</html>

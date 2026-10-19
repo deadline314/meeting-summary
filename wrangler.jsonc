@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "meeting-summary",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*", "/ws/*", "/mcp", "/mcp/*", "/files/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "meeting-summary",
+      // Replace with the id printed by `wrangler d1 create meeting-summary` before deploying.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "meeting-summary-files" }],
+  "durable_objects": { "bindings": [{ "name": "DOC_ROOM", "class_name": "DocRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DocRoom"] }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    "APP_VERSION": "0.1.0",
+    "OWNER_EMAILS": "",
+    "GOOGLE_CLIENT_ID": "",
+    "GITHUB_REPO": "deadline314/meeting-summary",
+    "GRADER_MODE": "github"
+  }
+}
