@@ -70,7 +70,7 @@ export function IssueTimeline({ scope, filters }: { scope: { key?: string }; fil
   // Day under the pointer when zooming, re-applied after the new width renders.
   const anchor = useRef<{ day: number; x: number } | null>(null)
   const [hover, setHover] = useState<{ x: number; y: number; seg: Seg } | null>(null)
-  const label = mobile ? 128 : 240
+  const label = mobile ? 148 : 240
 
   const range = useMemo(() => {
     const items = q.data?.items ?? []
@@ -222,7 +222,7 @@ export function IssueTimeline({ scope, filters }: { scope: { key?: string }; fil
                 style={{ width: label }}
               >
                 <IssueStatusIcon status={r.status} />
-                <span className="shrink-0 font-mono text-[11px] text-fg-4">{r.ref}</span>
+                {!mobile && <span className="shrink-0 font-mono text-[11px] text-fg-4">{r.ref}</span>}
                 <span className={cx('truncate', r.status === 'canceled' && 'line-through')}>{r.title}</span>
               </Link>
               <div className="relative flex-1">

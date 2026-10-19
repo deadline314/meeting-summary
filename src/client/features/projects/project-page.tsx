@@ -61,6 +61,7 @@ function Toolbar({
     <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
       {showView && (
         <Segmented
+          compact
           value={search.view ?? 'list'}
           onChange={(v) => setSearch({ view: v === 'list' ? undefined : v })}
           options={[

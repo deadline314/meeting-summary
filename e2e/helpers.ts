@@ -47,3 +47,12 @@ const CAST_PM: Record<string, [string, string]> = {
   'mobile-dark': ['簡佩珊', '鍾承翰'],
 }
 export const castPm = (info: TestInfo) => CAST_PM[info.project.name] ?? ['A', 'B']
+
+// People for the insights spec (duplicate, timeline, stats, saved views).
+const CAST_INS: Record<string, string> = {
+  'desktop-light': '范姜宇',
+  'desktop-dark': '歐陽靜',
+  'mobile-light': '司馬遷',
+  'mobile-dark': '上官婉',
+}
+export const castIns = (info: TestInfo) => CAST_INS[info.project.name] ?? 'I'

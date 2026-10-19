@@ -70,6 +70,7 @@ test('sign-in, welcome, home, settings, admin', async ({ page }, info) => {
 
   // Admin: owner rotates the admin key; members list.
   await page.goto('/admin?tab=site')
+  await page.getByRole('button', { name: '管理員金鑰' }).click()
   await page.getByRole('button', { name: '產生新金鑰' }).click()
   // A key already exists from an earlier run: rotating asks for confirmation first.
   const confirmBtn = page.getByRole('dialog').getByRole('button', { name: '確認' })

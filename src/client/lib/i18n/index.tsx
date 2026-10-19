@@ -57,7 +57,8 @@ function makeFormatters(locale: Locale) {
       if (abs < 3600) return rel.format(Math.round(diff / 60), 'minute')
       if (abs < 86400) return rel.format(Math.round(diff / 3600), 'hour')
       if (abs < 86400 * 30) return rel.format(Math.round(diff / 86400), 'day')
-      return date.format(ms)
+      // Older than a month: a short M/D this year (fits narrow columns), full date otherwise.
+      return new Date(ms).getFullYear() === new Date().getFullYear() ? day.format(ms) : date.format(ms)
     },
     bytes(n: number) {
       const u = ['B', 'KB', 'MB', 'GB']
