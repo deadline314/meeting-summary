@@ -17,7 +17,7 @@
 - [x] 評測程式沒產出結果、格式錯誤、逾時、記憶體超限時，平台判為錯誤或逾時並寫明具體原因
 - [x] 超過時限沒回報的工作由排程標記為逾時，不會永遠卡在執行中
 - [x] 公開的 Actions log、workflow 輸入、artifact 中沒有任何學生程式、輸出、分數或秘密（只有工作 id 與耗時）
-- [ ] 後台看得到本月評測次數與總耗時
+- [x] 後台看得到本月評測次數與總耗時
 - [x] 有一份文件說明如何設定觸發評測用的 GitHub 權杖與 workflow 權限
 - [x] 本機開發不需 GitHub 也能跑完整評測流程
 
@@ -59,3 +59,28 @@
 
 ![逾時的提交（電腦・淺色）](images/MS-23-timeout-desktop-light.png)
 ![逾時的提交（電腦・深色）](images/MS-23-timeout-desktop-dark.png)
+
+# Commit-2
+
+## 內文
+
+原本後台看不到評測用了多少。
+「後台 → 用量」現在顯示本月評測次數與總耗時（分鐘），並註明公開 repo 的 GitHub Actions 不限分鐘數。
+
+### 測試結果
+
+| 項目 | 結果 |
+|---|---|
+| 型別檢查（tsc -b） | 0 錯誤 |
+| Lint 與色碼檢查 | 0 錯誤（73 個檔案） |
+| 單元／整合測試（vitest） | 通過 34 / 34 |
+| 驗收測試（Playwright，電腦／手機 × 深／淺） | 通過 32 / 32 |
+
+### 截圖
+
+**用量**
+
+![用量（電腦・淺色）](images/MS-45-usage-desktop-light.png)
+![用量（電腦・深色）](images/MS-45-usage-desktop-dark.png)
+![用量（手機・淺色）](images/MS-45-usage-mobile-light.png)
+![用量（手機・深色）](images/MS-45-usage-mobile-dark.png)
