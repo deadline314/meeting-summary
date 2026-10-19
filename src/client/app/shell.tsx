@@ -79,7 +79,12 @@ export function AppShell() {
       >
         <div className="flex h-14 items-center gap-2.5 px-4">
           <Logo />
-          {!collapsed && <span className="truncate text-[15px] font-bold tracking-tight">{t('app.name')}</span>}
+          {!collapsed && (
+            <>
+              <span className="flex-1 truncate text-[15px] font-bold tracking-tight">{t('app.name')}</span>
+              <NotificationBell />
+            </>
+          )}
         </div>
         <div className="px-3 pb-2">
           <Tooltip label={collapsed ? t('nav.commandHint') : undefined} shortcut="mod+k" side="right">
@@ -97,9 +102,6 @@ export function AppShell() {
               )}
             </button>
           </Tooltip>
-        </div>
-        <div className="px-3 pb-1">
-          <NotificationBell compact={collapsed} />
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
           {nav.map((n) => {
@@ -128,6 +130,7 @@ export function AppShell() {
           })}
         </nav>
         <div className="flex flex-col gap-1 border-t border-line p-3">
+          {collapsed && <NotificationBell side="right" />}
           <AccountMenu collapsed={collapsed} />
           <IconButton
             label={collapsed ? t('nav.expand') : t('nav.collapse')}
@@ -148,7 +151,7 @@ export function AppShell() {
             <span className="text-[15px] font-bold tracking-tight">{t('app.name')}</span>
           </div>
           <IconButton label={t('nav.commandHint')} icon={<Search />} onClick={openPalette} />
-          <NotificationBell compact />
+          <NotificationBell />
           <AccountMenu collapsed />
         </header>
 

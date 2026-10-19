@@ -25,7 +25,7 @@ function href(n: Notice) {
 }
 
 /** Bell with unread count; opening lists recent notifications, clicking one marks it read and opens it. */
-export function NotificationBell({ compact }: { compact?: boolean }) {
+export function NotificationBell({ side = 'bottom' }: { side?: 'bottom' | 'right' }) {
   const { t, fmt } = useI18n()
   const dir = useDirectory()
   const navigate = useNavigate()
@@ -43,25 +43,21 @@ export function NotificationBell({ compact }: { compact?: boolean }) {
     })
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Tooltip label={compact ? t('nav.notifications') : undefined} side="right">
+      <Tooltip label={t('nav.notifications')} side={side}>
         <Popover.Trigger asChild>
           <button
             aria-label={t('nav.notifications')}
-            className={cx(
-              'relative flex items-center gap-3 rounded-xl text-sm font-medium text-fg-3 transition-colors hover:bg-surface-2 hover:text-fg-2 [&_svg]:size-[18px]',
-              compact ? 'size-10 justify-center' : 'h-9 w-full px-2.5',
-            )}
+            className="relative flex size-10 shrink-0 items-center justify-center rounded-xl text-fg-3 transition-colors hover:bg-surface-2 hover:text-fg-2 [&_svg]:size-[18px]"
           >
             <Bell />
-            {!compact && <span className="flex-1 text-left">{t('nav.notifications')}</span>}
             {unread > 0 && (
-              <span className={cx('min-w-5 rounded-full bg-danger px-1.5 text-center text-[11px] font-bold text-white', compact && 'absolute -top-0.5 -right-0.5')}>{unread > 99 ? '99+' : unread}</span>
+              <span className="absolute -top-0.5 -right-0.5 min-w-5 rounded-full bg-danger px-1.5 text-center text-[11px] font-bold text-white">{unread > 99 ? '99+' : unread}</span>
             )}
           </button>
         </Popover.Trigger>
       </Tooltip>
       <Popover.Portal>
-        <Popover.Content data-layer align="start" side="bottom" sideOffset={8} collisionPadding={12} className="anim-pop z-[60] flex max-h-[70vh] w-[min(380px,calc(100vw-24px))] flex-col rounded-2xl border border-line bg-surface shadow-card">
+        <Popover.Content data-layer align="start" side={side} sideOffset={8} collisionPadding={12} className="anim-pop z-[60] flex max-h-[70vh] w-[min(380px,calc(100vw-24px))] flex-col rounded-2xl border border-line bg-surface shadow-card">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <span className="text-sm font-semibold">{t('nav.notifications')}</span>
             {unread > 0 && (
