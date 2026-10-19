@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { login, uniq } from './helpers'
+import { login, uniq, projectKey } from './helpers'
 
 type N = { items: { type: string; entityId: string; data: { count?: number } }[]; unread: number; unreadIssues: string[] }
-const key = () => `N${crypto.randomUUID().replace(/[^a-z]/g, '').slice(0, 4).toUpperCase().padEnd(4, 'Q')}`
+const key = () => projectKey('N')
 const wait = () => new Promise((r) => setTimeout(r, 50))
 
 async function pair() {

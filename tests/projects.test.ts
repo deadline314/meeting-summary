@@ -1,8 +1,8 @@
 import { SELF } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { login, uniq } from './helpers'
+import { login, uniq, projectKey } from './helpers'
 
-const key = () => `P${crypto.randomUUID().replace(/[^a-z]/g, '').slice(0, 4).toUpperCase().padEnd(4, 'X')}`
+const key = () => projectKey('P')
 type Issue = { ref: string; version: number; status: string; blockedBy: { ref: string }[]; assigneeIds: string[] }
 
 async function setup() {

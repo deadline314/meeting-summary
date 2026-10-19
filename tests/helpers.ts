@@ -27,3 +27,6 @@ export async function login(email: string, name = email.split('@')[0]!) {
 }
 
 export const uniq = (p: string) => `${p}-${crypto.randomUUID().slice(0, 8)}@example.com`
+
+/** A project key no other test will pick: prefix + random A–Z letters (keys are 2–6 letters, unique site-wide). */
+export const projectKey = (prefix: string) => prefix + Array.from(crypto.getRandomValues(new Uint8Array(6 - prefix.length)), (b) => String.fromCharCode(65 + (b % 26))).join('')

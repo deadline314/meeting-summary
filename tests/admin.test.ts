@@ -1,6 +1,6 @@
 import { SELF } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { login, uniq } from './helpers'
+import { login, uniq, projectKey } from './helpers'
 
 describe('admin: settings, usage, activity export, member page', () => {
   it('settings are validated, logged and enforced; students are kept out', async () => {
@@ -42,7 +42,7 @@ describe('admin: settings, usage, activity export, member page', () => {
     const s = await login(uniq('adm2'))
     const sid = (await s.call<{ user: { id: string } }>('/api/me')).body.user.id
     await s.call('/api/notes', { method: 'POST', body: { title: '週會, "第一次"', startsAt: Date.now() } })
-    const key = 'AV' + crypto.randomUUID().replace(/[^a-z]/g, '').slice(0, 3).toUpperCase().padEnd(3, 'Z')
+    const key = projectKey('AV')
     await s.call('/api/projects', { method: 'POST', body: { key, name: 'p' } })
     const ownerId = (await owner.call<{ user: { id: string } }>('/api/me')).body.user.id
     await s.call(`/api/projects/${key}/members`, { method: 'POST', body: { userId: ownerId, role: 'member' } })

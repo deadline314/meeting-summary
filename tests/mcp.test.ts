@@ -1,6 +1,6 @@
 import { SELF } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { login, uniq } from './helpers'
+import { login, uniq, projectKey } from './helpers'
 
 const BASE = 'http://localhost'
 
@@ -18,7 +18,7 @@ const text = (r: Awaited<ReturnType<typeof rpc>>) => JSON.parse(r.body.result!.c
 describe('API keys & MCP', () => {
   it('initialize, list tools, create and comment on issues with a write key', async () => {
     const a = await login(uniq('m'))
-    const key = 'MC' + crypto.randomUUID().replace(/[^a-z]/g, '').slice(0, 3).toUpperCase().padEnd(3, 'Q')
+    const key = projectKey('MC')
     await a.call('/api/projects', { method: 'POST', body: { key, name: 'MCP' } })
     const k = (await a.call<{ secret: string }>('/api/me/api-keys', { method: 'POST', body: { name: 'claude', scope: 'write' } })).body.secret
     expect(k.startsWith('msk_')).toBe(true)
@@ -40,8 +40,8 @@ describe('API keys & MCP', () => {
 
   it('scopes, project limits and revocation are enforced on every call', async () => {
     const a = await login(uniq('m2'))
-    const k1 = 'MA' + crypto.randomUUID().replace(/[^a-z]/g, '').slice(0, 3).toUpperCase().padEnd(3, 'R')
-    const k2 = 'MB' + crypto.randomUUID().replace(/[^a-z]/g, '').slice(0, 3).toUpperCase().padEnd(3, 'S')
+    const k1 = projectKey('MA')
+    const k2 = projectKey('MB')
     const p1 = (await a.call<{ project: { id: string } }>('/api/projects', { method: 'POST', body: { key: k1, name: 'one' } })).body.project
     await a.call('/api/projects', { method: 'POST', body: { key: k2, name: 'two' } })
     const read = (await a.call<{ secret: string; key: { id: string } }>('/api/me/api-keys', { method: 'POST', body: { name: 'ro', scope: 'read' } })).body
