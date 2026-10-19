@@ -104,7 +104,7 @@ describe('meeting notes', () => {
     ca.ws.close()
   })
 
-  it('read-only viewers cannot edit', async () => {
+  it('read-only viewers cannot edit, and are told so instead of drifting apart', async () => {
     const a = await login(uniq('ra'))
     const v = await login(uniq('rv'))
     const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'RO', startsAt: Date.now() } })).body
@@ -113,8 +113,62 @@ describe('meeting notes', () => {
     await sleep(150)
     const ca = await connect(a.cookie, note.id)
     expect(ca.text.toString().startsWith('nope')).toBe(false)
+    expect(cv.closed()).toBe(4003)
     ca.ws.close()
-    cv.ws.close()
+  })
+
+  it('a periodic resync fills in edits the server never received', async () => {
+    const a = await login(uniq('ya'))
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'Resync', startsAt: Date.now() } })).body
+    const c1 = await connect(a.cookie, note.id)
+    const c2 = await connect(a.cookie, note.id)
+    // An edit that stays local (as if the server lost it): applied with the "remote" origin, so not sent.
+    const local = new Y.Doc()
+    local.clientID = c1.doc.clientID
+    Y.applyUpdate(local, Y.encodeStateAsUpdate(c1.doc))
+    local.getText('content').insert(0, 'lost ')
+    Y.applyUpdate(c1.doc, Y.encodeStateAsUpdate(local), 'remote')
+    await sleep(100)
+    expect(c2.text.toString().startsWith('lost ')).toBe(false)
+    // What y-websocket does every resyncInterval: send step 1. The server answers and asks back.
+    const e = encoding.createEncoder()
+    encoding.writeVarUint(e, 0)
+    syncProtocol.writeSyncStep1(e, c1.doc)
+    c1.ws.send(encoding.toUint8Array(e))
+    await sleep(200)
+    expect(c2.text.toString().startsWith('lost ')).toBe(true)
+    c1.ws.close()
+    c2.ws.close()
+  })
+
+  it('someone made an attendee while the note is open can edit, and everyone sees it', async () => {
+    const a = await login(uniq('pa'))
+    const b = await login(uniq('pb'))
+    const c = await login(uniq('pc'))
+    const id = async (s: typeof a) => (await s.call<{ user: { id: string } }>('/api/me')).body.user.id
+    const [bId, cId] = [await id(b), await id(c)]
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'Perm', startsAt: Date.now() } })).body
+    const ca = await connect(a.cookie, note.id)
+    const cb = await connect(b.cookie, note.id)
+    // Adding b through the app: every open connection is asked to reconnect with fresh rights.
+    const v = (await a.call<NoteRes>(`/api/notes/${note.id}`)).body.note.version
+    expect((await a.call(`/api/notes/${note.id}`, { method: 'PATCH', body: { version: v, attendeeIds: [bId] } })).status).toBe(200)
+    await sleep(150)
+    expect(cb.closed()).toBe(4000)
+    expect(ca.closed()).toBeNull() // editors stay connected
+    const cb2 = await connect(b.cookie, note.id)
+    cb2.text.insert(0, 'from b ')
+    await sleep(150)
+    expect(ca.text.toString().startsWith('from b ')).toBe(true)
+    // A connection opened before c was added (no push): the first edit re-checks instead of being dropped.
+    const cc = await connect(c.cookie, note.id)
+    await env.DB.prepare('update notes set attendee_ids = ? where id = ?').bind(JSON.stringify([bId, cId]), note.id).run()
+    cc.text.insert(0, 'from c ')
+    await sleep(200)
+    expect(cc.closed()).toBeNull()
+    expect(ca.text.toString().startsWith('from c ')).toBe(true)
+    expect(cb2.text.toString()).toBe(ca.text.toString())
+    for (const x of [ca, cb2, cc]) x.ws.close()
   })
 
   it('turns edit sessions into versions and restores', async () => {

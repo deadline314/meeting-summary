@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
@@ -15,22 +15,38 @@ export type Collab = {
 
 // One Y.Doc + connection per note, shared and ref-counted so React StrictMode's
 // mount → unmount → mount (and quick back/forward navigation) don't drop the socket.
-const rooms = new Map<string, { c: Collab; refs: number; timer?: ReturnType<typeof setTimeout> }>()
+const rooms = new Map<string, { c: Collab; refs: number; timer?: ReturnType<typeof setTimeout>; dead?: boolean }>()
 
 function room(noteId: string) {
   let r = rooms.get(noteId)
   if (!r) {
     const doc = new Y.Doc()
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const provider = new WebsocketProvider(`${proto}://${location.host}/ws/doc`, noteId, doc, { maxBackoffTime: 5000 })
+    // resyncInterval: both sides compare what they have every 30 s, so a lost update heals itself.
+    const provider = new WebsocketProvider(`${proto}://${location.host}/ws/doc`, noteId, doc, { maxBackoffTime: 5000, resyncInterval: 30_000 })
     r = { c: { doc, text: doc.getText('content'), provider }, refs: 0 }
     rooms.set(noteId, r)
   }
   return r
 }
 
+function drop(noteId: string, r: NonNullable<ReturnType<typeof rooms.get>>) {
+  if (r.dead) return
+  r.dead = true
+  clearTimeout(r.timer)
+  r.c.provider.destroy()
+  r.c.doc.destroy()
+  if (rooms.get(noteId) === r) rooms.delete(noteId)
+}
+
+// Close codes from the document server (see doc-room.ts).
+const PERMISSIONS_CHANGED = 4000
+const READ_ONLY = 4003
+
 export function useCollab(noteId: string): Collab {
   const me = useMe()
+  const qc = useQueryClient()
+  const [, rerender] = useState(0)
   const c = room(noteId).c
   useEffect(() => {
     const r = room(noteId)
@@ -38,14 +54,25 @@ export function useCollab(noteId: string): Collab {
     r.refs++
     return () => {
       r.refs--
-      if (r.refs === 0)
-        r.timer = setTimeout(() => {
-          r.c.provider.destroy()
-          r.c.doc.destroy()
-          rooms.delete(noteId)
-        }, 1500)
+      if (r.refs === 0) r.timer = setTimeout(() => drop(noteId, r), 1500)
     }
-  }, [noteId])
+  }, [noteId, c])
+  // The server decides who may edit when the socket opens. When that changes it closes the
+  // socket: reload our permission and reconnect, or — if our edits were refused — start over
+  // from the server's copy so this screen never drifts from everyone else's.
+  useEffect(() => {
+    const onClose = (e: CloseEvent | null) => {
+      if (e?.code !== PERMISSIONS_CHANGED && e?.code !== READ_ONLY) return
+      qc.invalidateQueries({ queryKey: ['note', noteId] })
+      if (e.code === READ_ONLY) {
+        const r = rooms.get(noteId)
+        if (r?.c === c) drop(noteId, r)
+        rerender((n) => n + 1)
+      }
+    }
+    c.provider.on('connection-close', onClose)
+    return () => c.provider.off('connection-close', onClose)
+  }, [c, noteId, qc])
   useEffect(() => {
     c.provider.awareness.setLocalStateField('user', { id: me.id, name: me.name, color: authorColor(me.id) })
   }, [c, me.id, me.name])

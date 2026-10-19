@@ -6,12 +6,16 @@ import * as awarenessProtocol from 'y-protocols/awareness'
 import * as syncProtocol from 'y-protocols/sync'
 import * as Y from 'yjs'
 import { getDb } from '../db'
-import { activities, noteVersions, notes } from '../db/schema'
+import { activities, noteVersions, notes, users } from '../db/schema'
 import { newId } from '../lib/crypto'
+import { canEditNote } from '../services/notes'
 import { errorFields, log } from '../lib/log'
 
 const MSG_SYNC = 0
 const MSG_AWARENESS = 1
+/** Close codes the client acts on: reconnect with fresh permissions, or become read-only. */
+export const CLOSE_PERMISSIONS_CHANGED = 4000
+export const CLOSE_READ_ONLY = 4003
 const SESSION_IDLE_MS = 5 * 60_000
 const CONTENT_SYNC_MS = 20_000
 const COMPACT_AFTER = 300
@@ -160,6 +164,17 @@ export class DocRoom extends DurableObject<Env> {
       return Response.json({ ok: true })
     }
     if (url.pathname.endsWith('/text')) return new Response(this.text.toString())
+    if (url.pathname.endsWith('/permissions') && req.method === 'POST') {
+      // Who may edit changed (attendees, recorder): connections whose right flipped reconnect, so
+      // the server and that person's screen agree again. Everyone else stays connected.
+      const allowed = new Map<string, boolean>()
+      for (const ws of this.ctx.getWebSockets()) {
+        const a = this.attachment(ws)
+        if (!allowed.has(a.userId)) allowed.set(a.userId, await this.mayEdit(a.userId))
+        if (allowed.get(a.userId) !== a.canEdit) ws.close(CLOSE_PERMISSIONS_CHANGED, 'permissions changed')
+      }
+      return Response.json({ ok: true })
+    }
     if (req.headers.get('upgrade') !== 'websocket') return new Response('expected websocket', { status: 426 })
 
     const pair = new WebSocketPair()
@@ -201,23 +216,37 @@ export class DocRoom extends DurableObject<Env> {
     try {
       const decoder = decoding.createDecoder(new Uint8Array(data))
       const type = decoding.readVarUint(decoder)
-      if (type === MSG_SYNC) this.onSync(ws, decoder)
+      if (type === MSG_SYNC) await this.onSync(ws, decoder)
       else if (type === MSG_AWARENESS) awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(decoder), ws)
     } catch (err) {
       log('warn', 'doc message rejected', { noteId: this.noteId, ...errorFields(err) })
     }
   }
 
-  private onSync(ws: WebSocket, decoder: decoding.Decoder) {
+  private async onSync(ws: WebSocket, decoder: decoding.Decoder) {
     const kind = decoding.readVarUint(decoder)
     if (kind === syncProtocol.messageYjsSyncStep1) {
       const sv = decoding.readVarUint8Array(decoder)
       ws.send(syncMessage((e) => syncProtocol.writeSyncStep2(e, this.doc, sv)))
+      // Ask back, so a periodic client resync also pulls anything *we* are missing (e.g. edits
+      // held in memory that never reached storage before this object was restarted).
+      ws.send(syncMessage((e) => syncProtocol.writeSyncStep1(e, this.doc)))
       return
     }
     const update = decoding.readVarUint8Array(decoder)
-    const a = this.attachment(ws)
-    if (!a.canEdit) return
+    let a = this.attachment(ws)
+    if (!a.canEdit) {
+      // Read-only clients answer our sync request with an empty update; anything more means they
+      // think they may edit. Permission is decided when the socket opens and may be stale, so check
+      // again instead of dropping the edit silently (which left that person's screen out of sync).
+      if (isEmpty(update)) return
+      if (!(await this.mayEdit(a.userId))) {
+        ws.close(CLOSE_READ_ONLY, 'read-only')
+        return
+      }
+      a = { ...a, canEdit: true }
+      ws.serializeAttachment(a)
+    }
     if (!this.authorize(ws, a, update)) {
       log('warn', 'forged yjs client id rejected', { noteId: this.noteId, userId: a.userId })
       ws.close(4403, 'forbidden')
@@ -226,6 +255,14 @@ export class DocRoom extends DurableObject<Env> {
     const now = Date.now()
     for (const c of this.attachment(ws).clientIds) this.clientLastAt.set(c, now)
     Y.applyUpdate(this.doc, update, ws)
+  }
+
+  /** The notes service's rule: staff, the creator, the recorder or an attendee. */
+  private async mayEdit(userId: string) {
+    const db = getDb(this.env.DB)
+    const [n, u] = await Promise.all([db.select().from(notes).where(eq(notes.id, this.noteId)).get(), db.select().from(users).where(eq(users.id, userId)).get()])
+    if (!n || n.deletedAt || !u || u.status !== 'active') return false
+    return canEditNote({ user: u }, n)
   }
 
   /** Every new Yjs client id in an update must belong to the connection's account. */
@@ -357,6 +394,11 @@ export class DocRoom extends DurableObject<Env> {
     }
     this.schedule()
   }
+}
+
+function isEmpty(update: Uint8Array) {
+  const { structs, ds } = Y.decodeUpdate(update)
+  return structs.length === 0 && ds.clients.size === 0
 }
 
 function syncMessage(write: (e: encoding.Encoder) => void) {

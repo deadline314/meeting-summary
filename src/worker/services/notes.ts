@@ -4,6 +4,7 @@ import { isAdmin, requireScope } from '../context'
 import { noteComments, noteVersions, notes, settings, type Absentee } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { conflict, notFound } from '../lib/errors'
+import { errorFields, log } from '../lib/log'
 import { activity } from './activity'
 import { defaultBody, parseActionItems, type Locale } from './note-template'
 import { visibleProjectIds } from './projects'
@@ -129,6 +130,9 @@ export async function updateNote(ctx: Ctx, id: string, version: number, patch: P
     activity(ctx, { entityType: 'note', entityId: id, action: 'updated', data: { fields: Object.keys(patch).join(',') }, projectId: n.projectId }),
   ])
   if (res[0].meta.changes === 0) throw conflict()
+  // Who may edit changed: open editors reconnect so the live document re-checks everyone.
+  if (patch.attendeeIds || patch.recorderId)
+    ctx.waitUntil(docRoom(ctx.env, id).fetch('https://doc/permissions', { method: 'POST', headers: { 'x-note-id': id } }).catch((err) => log('warn', 'doc permission refresh failed', { noteId: id, ...errorFields(err) })))
   return { ...n, ...patch, version: n.version + 1 }
 }
 
