@@ -15,6 +15,12 @@ const runSweep = (env: Env, ctx: ExecutionContext) =>
 
 export default {
   fetch(req, env, ctx) {
+    // One public origin: session cookies and the Google sign-in callback are tied to it.
+    const url = new URL(req.url)
+    if (env.SITE_URL && url.hostname.endsWith('.workers.dev')) {
+      const site = new URL(env.SITE_URL)
+      if (site.host !== url.host) return Response.redirect(`${site.origin}${url.pathname}${url.search}`, 308)
+    }
     const now = Date.now()
     if (now - lastSweep > SWEEP_EVERY) {
       lastSweep = now

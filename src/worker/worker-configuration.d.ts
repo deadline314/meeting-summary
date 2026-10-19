@@ -6,7 +6,7 @@ interface __BaseEnv_Env {
 	DB: D1Database;
 	APP_VERSION: "0.1.0";
 	GITHUB_REPO: "deadline314/meeting-summary";
-	SITE_URL: "https://meeting-summary.stanley890314.workers.dev";
+	SITE_URL: "https://student-paltform.phocoenoides.com";
 	DEV_LOGIN: string;
 	OWNER_EMAILS: string;
 	GRADER_MODE: string;

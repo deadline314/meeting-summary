@@ -27,6 +27,6 @@
     "GITHUB_REPO": "deadline314/meeting-summary",
     "GRADER_MODE": "github",
     // Public origin of the site, sent to the grading workflow so it knows where to report.
-    "SITE_URL": "https://meeting-summary.stanley890314.workers.dev"
+    "SITE_URL": "https://student-paltform.phocoenoides.com"
   }
 }
