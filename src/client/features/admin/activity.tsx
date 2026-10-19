@@ -1,13 +1,12 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Activity } from 'lucide-react'
-import { useState } from 'react'
+import { Activity, Download } from 'lucide-react'
 import { api } from '../../lib/api'
 import { useI18n, type MsgKey } from '../../lib/i18n'
 import { useDirectory } from '../../lib/session'
 import { UserAvatar } from '../../ui/avatar'
 import { Button } from '../../ui/button'
-import { Select } from '../../ui/field'
+import { Input, Select } from '../../ui/field'
 import { Card, EmptyState, Skeleton } from '../../ui/misc'
 
 export type ActivityRow = {
@@ -22,7 +21,7 @@ export type ActivityRow = {
   createdAt: number
 }
 
-const TYPES = ['user', 'note', 'task', 'submission', 'project', 'issue'] as const
+const TYPES = ['user', 'note', 'task', 'submission', 'project', 'issue', 'site'] as const
 
 /** Href for the thing an activity is about; null when there is nothing to open. */
 export function activityHref(a: ActivityRow): string | null {
@@ -65,27 +64,39 @@ export function useActivityText() {
   }
 }
 
-export function ActivityFeed({ actorId: fixedActor }: { actorId?: string }) {
+type Filters = { actor?: string; type?: string; from?: string; to?: string }
+const dayStart = (d: string) => new Date(`${d}T00:00:00`).getTime()
+
+/** Activity stream. On the admin tab the filters live in the URL; on a member page the actor is fixed. */
+export function ActivityFeed({ actorId: fixedActor, filters = {}, onFilters }: { actorId?: string; filters?: Filters; onFilters?(f: Filters): void }) {
   const { t, fmt } = useI18n()
   const dir = useDirectory()
-  const [actorId, setActor] = useState(fixedActor ?? '')
-  const [type, setType] = useState('')
+  const actorId = fixedActor ?? filters.actor ?? ''
+  const type = filters.type ?? ''
+  const params = new URLSearchParams({
+    ...(actorId && { actor: actorId }),
+    ...(type && { type }),
+    ...(filters.from && { from: String(dayStart(filters.from)) }),
+    ...(filters.to && { to: String(dayStart(filters.to) + 86400_000) }),
+  })
   const describe = useActivityText()
   const q = useInfiniteQuery({
-    queryKey: ['activity', actorId, type],
-    queryFn: ({ pageParam }) =>
-      api<{ items: ActivityRow[]; nextBefore: number | null }>(
-        `/api/admin/activity?${new URLSearchParams({ ...(actorId && { actorId }), ...(type && { entityType: type }), ...(pageParam && { before: String(pageParam) }) })}`,
-      ),
+    queryKey: ['activity', params.toString()],
+    queryFn: ({ pageParam }) => {
+      const p = new URLSearchParams(params)
+      if (pageParam) p.set('before', String(pageParam))
+      return api<{ items: ActivityRow[]; nextBefore: number | null }>(`/api/admin/activity?${p}`)
+    },
     initialPageParam: 0,
     getNextPageParam: (p) => p.nextBefore ?? undefined,
   })
   const items = q.data?.pages.flatMap((p) => p.items) ?? []
+  const set = (f: Filters) => onFilters?.({ ...filters, ...f })
   return (
     <div className="flex flex-col gap-4">
       {!fixedActor && (
-        <div className="flex flex-wrap gap-2">
-          <Select value={actorId} onChange={(e) => setActor(e.target.value)} className="w-auto" aria-label={t('activity.filterMember')}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={actorId} onChange={(e) => set({ actor: e.target.value || undefined })} className="w-auto max-md:flex-1" aria-label={t('activity.filterMember')}>
             <option value="">{t('activity.allMembers')}</option>
             {[...dir.values()].map((u) => (
               <option key={u.id} value={u.id}>
@@ -93,7 +104,7 @@ export function ActivityFeed({ actorId: fixedActor }: { actorId?: string }) {
               </option>
             ))}
           </Select>
-          <Select value={type} onChange={(e) => setType(e.target.value)} className="w-auto" aria-label={t('activity.filterType')}>
+          <Select value={type} onChange={(e) => set({ type: e.target.value || undefined })} className="w-auto max-md:flex-1" aria-label={t('activity.filterType')}>
             <option value="">{t('activity.allTypes')}</option>
             {TYPES.map((x) => (
               <option key={x} value={x}>
@@ -101,6 +112,19 @@ export function ActivityFeed({ actorId: fixedActor }: { actorId?: string }) {
               </option>
             ))}
           </Select>
+          <label className="flex items-center gap-1.5 text-xs text-fg-4">
+            {t('activity.from')}
+            <Input type="date" value={filters.from ?? ''} max={filters.to} onChange={(e) => set({ from: e.target.value || undefined })} className="h-9 w-auto" />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-fg-4">
+            {t('activity.to')}
+            <Input type="date" value={filters.to ?? ''} min={filters.from} onChange={(e) => set({ to: e.target.value || undefined })} className="h-9 w-auto" />
+          </label>
+          <Button asChild size="sm" variant="secondary" icon={<Download className="size-4" />} className="ml-auto">
+            <a href={`/api/admin/activity.csv?${params}`} download>
+              {t('activity.csv')}
+            </a>
+          </Button>
         </div>
       )}
       <Card>

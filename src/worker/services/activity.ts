@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm'
 import type { Ctx } from '../context'
 import { activities } from '../db/schema'
 import { newId } from '../lib/crypto'
@@ -26,7 +26,7 @@ export function activity(ctx: Pick<Ctx, 'db' | 'user' | 'source'>, a: Activity, 
   })
 }
 
-export type ActivityQuery = { actorId?: string; entityType?: string; before?: number; limit: number }
+export type ActivityQuery = { actorId?: string; entityType?: string; from?: number; to?: number; before?: number; limit: number }
 
 /** Newest-first activity stream. Rows tied to a project are only returned for projects in `visibleProjectIds`. */
 export async function listActivity(ctx: Ctx, q: ActivityQuery, visibleProjectIds: string[]) {
@@ -38,6 +38,8 @@ export async function listActivity(ctx: Ctx, q: ActivityQuery, visibleProjectIds
         q.actorId ? eq(activities.actorId, q.actorId) : undefined,
         q.entityType ? eq(activities.entityType, q.entityType) : undefined,
         q.before ? lt(activities.createdAt, q.before) : undefined,
+        q.from ? gte(activities.createdAt, q.from) : undefined,
+        q.to ? lt(activities.createdAt, q.to) : undefined,
         visibleProjectIds.length ? or(isNull(activities.projectId), inArray(activities.projectId, visibleProjectIds)) : isNull(activities.projectId),
       ),
     )

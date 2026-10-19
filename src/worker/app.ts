@@ -16,6 +16,7 @@ import { noteRoutes, noteSocket } from './routes/notes'
 import { graderRoutes, taskRoutes } from './routes/tasks'
 import { projectRoutes } from './routes/projects'
 import { sweepStuckJobs } from './services/grader'
+import { alertUsage } from './services/site'
 import { KEY_PREFIX, authenticateKey } from './services/api-keys'
 import { mcpRoutes } from './routes/mcp'
 import { notificationRoutes } from './routes/notifications'
@@ -124,4 +125,5 @@ export async function scheduled(env: Env, waitUntil: (p: Promise<unknown>) => vo
   await sweepStuckJobs(env, waitUntil)
   await db.delete(sessions).where(lt(sessions.expiresAt, Date.now()))
   await db.run(sql`delete from rate_limits where reset_at < ${Date.now()}`)
+  await alertUsage({ db, env, waitUntil })
 }

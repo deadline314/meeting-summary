@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
-import { Activity, Ban, KeyRound, MoreHorizontal, RotateCcw, Shield, ShieldOff, Trash2, UserCheck, Users } from 'lucide-react'
+import { Activity, Ban, Gauge, MoreHorizontal, Settings2, RotateCcw, Shield, ShieldOff, Trash2, UserCheck, Users } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useState } from 'react'
 import type { Page, Role, UserDto } from '@shared/types'
@@ -16,11 +16,18 @@ import { Badge, Card, EmptyState, PageHeader, Skeleton } from '../../ui/misc'
 import { TabBar } from '../../ui/tabs'
 import { toast, toastError } from '../../ui/toast'
 import { ActivityFeed } from './activity'
+import { MemberPage } from './member'
+import { SiteSettingsPanel } from './site-settings'
+import { UsagePanel, UsageWarning, usageQuery } from './usage'
 
-export type AdminTab = 'members' | 'activity' | 'site'
+export type AdminTab = 'members' | 'activity' | 'usage' | 'site'
+export type AdminSearch = { tab: AdminTab; member?: string; actor?: string; type?: string; from?: string; to?: string }
 
-export function AdminPage({ tab, onTab }: { tab: AdminTab; onTab(t: AdminTab): void }) {
+export function AdminPage({ search, setSearch }: { search: AdminSearch; setSearch(s: AdminSearch, replace?: boolean): void }) {
   const { t } = useI18n()
+  const tab = search.tab
+  const onTab = (tab: AdminTab) => setSearch({ tab })
+  const usage = useQuery(usageQuery)
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8">
       <PageHeader title={t('admin.title')} />
@@ -30,13 +37,20 @@ export function AdminPage({ tab, onTab }: { tab: AdminTab; onTab(t: AdminTab): v
         tabs={[
           { value: 'members', label: t('admin.members'), icon: <Users /> },
           { value: 'activity', label: t('admin.activity'), icon: <Activity /> },
-          { value: 'site', label: t('admin.site'), icon: <KeyRound /> },
+          { value: 'usage', label: t('admin.usage'), icon: <Gauge /> },
+          { value: 'site', label: t('admin.settings'), icon: <Settings2 /> },
         ]}
       />
-      <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="mt-6">
-        {tab === 'members' && <Members />}
-        {tab === 'activity' && <ActivityFeed />}
-        {tab === 'site' && <SiteSettings />}
+      {tab !== 'usage' && !!usage.data?.warn.length && (
+        <div className="mt-4">
+          <UsageWarning warn={usage.data.warn} />
+        </div>
+      )}
+      <motion.div key={tab + (search.member ?? '')} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="mt-6">
+        {tab === 'members' && (search.member ? <MemberPage id={search.member} onBack={() => setSearch({ tab: 'members' }, false)} /> : <Members onOpen={(id) => setSearch({ tab: 'members', member: id }, false)} />)}
+        {tab === 'activity' && <ActivityFeed filters={search} onFilters={(f) => setSearch({ ...search, ...f })} />}
+        {tab === 'usage' && <UsagePanel />}
+        {tab === 'site' && <SiteSettingsPanel />}
       </motion.div>
     </div>
   )
@@ -44,7 +58,7 @@ export function AdminPage({ tab, onTab }: { tab: AdminTab; onTab(t: AdminTab): v
 
 const PAGE = 50
 
-function Members() {
+function Members({ onOpen }: { onOpen(id: string): void }) {
   const { t, fmt } = useI18n()
   const [search, setSearch] = useState('')
   const [role, setRole] = useState<Role | ''>('')
@@ -100,8 +114,9 @@ function Members() {
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.02, 0.2) }}
-                className="flex items-center gap-3 px-4 py-3"
+                className="flex items-center gap-3 px-4 py-3 max-md:py-3.5"
               >
+                <button onClick={() => onOpen(u.id)} aria-label={`${t('member.open')}：${u.name}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left">
                 <Avatar id={u.id} name={u.name} src={u.avatarUrl} size="md" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -119,6 +134,7 @@ function Members() {
                     {t('admin.lastSeen')} {u.lastSeenAt ? fmt.relative(u.lastSeenAt) : t('admin.never')}
                   </div>
                 </div>
+                </button>
                 <MemberMenu u={u} />
               </motion.li>
             ))}
@@ -194,50 +210,5 @@ function MemberMenu({ u }: { u: UserDto }) {
         </MenuItem>
       </MenuContent>
     </Menu>
-  )
-}
-
-function SiteSettings() {
-  const me = useMe()
-  const { t } = useI18n()
-  const status = useQuery({ queryKey: ['admin-key'], queryFn: () => api<{ configured: boolean }>('/api/admin/admin-key') })
-  const [fresh, setFresh] = useState<string | null>(null)
-  const rotate = useMutation({
-    mutationFn: () => api<{ key: string }>('/api/admin/admin-key/rotate', { method: 'POST' }),
-    onSuccess: (r) => {
-      setFresh(r.key)
-      queryClient.invalidateQueries({ queryKey: ['admin-key'] })
-    },
-    onError: (e) => toastError(e),
-  })
-  return (
-    <Card className="p-5">
-      <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
-        <KeyRound className="size-4 text-accent-text" /> {t('admin.adminKey')}
-      </div>
-      <p className="mb-4 text-sm text-fg-3">{status.data?.configured ? t('admin.adminKeySet') : t('admin.adminKeyNone')}</p>
-      {fresh && (
-        <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="mb-4 rounded-xl border border-accent bg-accent-soft p-3">
-          <div className="mb-1 text-xs font-medium text-accent-text">{t('admin.newKey')}</div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 font-mono text-sm break-all">{fresh}</code>
-            <Button size="sm" onClick={() => navigator.clipboard.writeText(fresh).then(() => toast(t('common.copied')))}>
-              {t('common.copy')}
-            </Button>
-          </div>
-        </motion.div>
-      )}
-      {me.role === 'owner' && (
-        <Button
-          onClick={async () => {
-            if (!status.data?.configured || (await confirm({ title: t('admin.rotate'), body: t('admin.rotateConfirm'), danger: true }))) rotate.mutate()
-          }}
-          loading={rotate.isPending}
-          icon={<RotateCcw className="size-4" />}
-        >
-          {t('admin.rotate')}
-        </Button>
-      )}
-    </Card>
   )
 }

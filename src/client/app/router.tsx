@@ -76,15 +76,22 @@ const settingsRoute = createRoute({
 const adminRoute = createRoute({
   getParentRoute: () => appLayout,
   path: '/admin',
-  validateSearch: z.object({ tab: z.enum(['members', 'activity', 'site']).catch('members').default('members') }),
+  validateSearch: z.object({
+    tab: z.enum(['members', 'activity', 'usage', 'site']).catch('members').default('members'),
+    member: z.string().optional(),
+    actor: z.string().optional(),
+    type: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  }),
   beforeLoad: async ({ context }) => {
     const me = await context.queryClient.ensureQueryData(meQuery)
     if (me?.role === 'student') throw redirect({ to: '/' })
   },
   component: function Admin() {
-    const { tab } = adminRoute.useSearch()
+    const search = adminRoute.useSearch()
     const navigate = adminRoute.useNavigate()
-    return <AdminPage tab={tab} onTab={(t) => navigate({ search: { tab: t }, replace: true })} />
+    return <AdminPage search={search} setSearch={(s, replace = true) => navigate({ search: s, replace })} />
   },
 })
 

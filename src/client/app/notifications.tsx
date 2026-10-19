@@ -21,6 +21,7 @@ function href(n: Notice) {
   if (n.entityType === 'issue' && n.data.ref) return `/projects/${n.data.ref.split('-')[0]}/${n.data.ref}`
   if (n.entityType === 'note') return `/notes/${n.entityId}?tab=comments`
   if (n.entityType === 'task') return `/tasks/${n.entityId}?tab=submit`
+  if (n.entityType === 'site') return '/admin?tab=usage'
   return '/'
 }
 
@@ -40,6 +41,8 @@ export function NotificationBell({ side = 'bottom' }: { side?: 'bottom' | 'right
       title: n.data.title ?? '',
       to: n.data.to ? t(`status.${n.data.to}` as MsgKey) : '',
       status: n.data.status ? t(`submission.${n.data.status}` as MsgKey) : '',
+      metric: n.data.metric ? t(`usage.${n.data.metric}` as MsgKey) : '',
+      pct: n.data.pct ?? '',
     })
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>

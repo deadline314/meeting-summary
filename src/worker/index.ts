@@ -1,4 +1,6 @@
 import { app, scheduled } from './app'
+import { getDb } from './db'
+import { countRequest } from './services/site'
 import { errorFields, log } from './lib/log'
 
 export { DocRoom } from './do/doc-room'
@@ -18,6 +20,7 @@ export default {
       lastSweep = now
       runSweep(env, ctx)
     }
+    countRequest(getDb(env.DB), (p) => ctx.waitUntil(p), now)
     return app.fetch(req, env, ctx)
   },
   async scheduled(_event, env, ctx) {

@@ -7,6 +7,7 @@ import { AppError, conflict, notFound } from '../lib/errors'
 import { activity } from './activity'
 import { parentChecks, uploadFile } from './files'
 import { SYSTEM_ACTOR, notify } from './notify'
+import { readSettings } from './site'
 import { visibleProjectIds } from './projects'
 import { dispatchGrading } from './grader'
 
@@ -63,6 +64,7 @@ function requireAdmin(ctx: Ctx) {
 export async function createTask(ctx: Ctx, input: TaskInput) {
   requireScope(ctx, 'write')
   requireAdmin(ctx)
+  const def = (await readSettings(ctx)).grading_defaults
   const now = Date.now()
   const t: Task = {
     id: newId(),
@@ -74,16 +76,16 @@ export async function createTask(ctx: Ctx, input: TaskInput) {
     projectId: input.projectId ?? null,
     submitKind: input.submitKind ?? 'file',
     accept: input.accept ?? '',
-    maxBytes: input.maxBytes ?? 10 * 1024 * 1024,
-    dailyLimit: input.dailyLimit ?? 10,
+    maxBytes: input.maxBytes ?? def.maxBytes,
+    dailyLimit: input.dailyLimit ?? def.dailyLimit,
     leaderboard: input.leaderboard ?? true,
     higherIsBetter: input.higherIsBetter ?? true,
     graderFileId: input.graderFileId ?? null,
     dataFileId: input.dataFileId ?? null,
     image: input.image ?? 'python:3.12-slim',
     requirements: input.requirements ?? '',
-    timeoutSec: input.timeoutSec ?? 300,
-    memoryMb: input.memoryMb ?? 2048,
+    timeoutSec: input.timeoutSec ?? def.timeoutSec,
+    memoryMb: input.memoryMb ?? def.memoryMb,
     trialPassedAt: null,
     createdBy: ctx.user.id,
     createdAt: now,

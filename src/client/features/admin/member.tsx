@@ -4,6 +4,7 @@ import { ArrowLeft, CheckSquare, FileText, FolderKanban } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { UserDto } from '@shared/types'
 import { api } from '../../lib/api'
+import { useNow } from '../../lib/hooks'
 import { useI18n, type MsgKey } from '../../lib/i18n'
 import { Avatar } from '../../ui/avatar'
 import { Button } from '../../ui/button'
@@ -28,8 +29,9 @@ const WEEKS = 12
 /** 12 weeks × 7 days, columns are weeks (Monday on top), newest on the right. */
 function Heatmap({ data }: { data: Overview['heatmap'] }) {
   const { t, fmt } = useI18n()
-  const offset = -new Date().getTimezoneOffset() * 60_000
-  const todayIdx = Math.floor((Date.now() + offset) / DAY)
+  const now = useNow(3600_000)
+  const offset = -new Date(now).getTimezoneOffset() * 60_000
+  const todayIdx = Math.floor((now + offset) / DAY)
   const counts = new Map(data.map((d) => [d.day, d.n]))
   // Day index 0 (1970-01-01) was a Thursday; shift so weeks start on Monday.
   const weekday = (i: number) => (i + 3) % 7

@@ -8,6 +8,7 @@ import { sessions, users } from '../db/schema'
 import { notFound } from '../lib/errors'
 import { LAST_LOGIN_COOKIE, revokeOtherSessions } from '../services/auth'
 import { createApiKey, listApiKeys, revokeApiKey } from '../services/api-keys'
+import { readSettings } from '../services/site'
 import { directory, hasAdminKey, redeemAdminKey, rotateAdminKey, updateMe, userDto } from '../services/users'
 import { devLoginEnabled } from './auth'
 
@@ -21,8 +22,10 @@ const prefs = z.object({
 })
 
 // Public: what the login page needs.
-meRoutes.get('/config', (c) =>
-  c.json({ version: c.env.APP_VERSION, devLogin: devLoginEnabled(c), google: !!c.env.GOOGLE_CLIENT_ID }),
+meRoutes.get('/config', async (c) => {
+  const site = (await readSettings({ db: c.get('db') })).site
+  return c.json({ version: c.env.APP_VERSION, devLogin: devLoginEnabled(c), google: !!c.env.GOOGLE_CLIENT_ID, siteName: site.name, siteIcon: site.icon })
+},
 )
 
 meRoutes.get('/auth/hint', async (c) => {

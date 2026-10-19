@@ -14,6 +14,9 @@ import {
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { SITE_ICONS } from '../features/admin/site-settings'
+import { api } from '../lib/api'
 import { useOnline } from '../lib/hooks'
 import { useT, type MsgKey } from '../lib/i18n'
 import { isAdminRole, logout, useMe } from '../lib/session'
@@ -45,6 +48,7 @@ function useActive() {
 }
 
 export function AppShell() {
+  const siteName = useSite().name
   const me = useMe()
   const t = useT()
   const isActive = useActive()
@@ -81,7 +85,7 @@ export function AppShell() {
           <Logo />
           {!collapsed && (
             <>
-              <span className="flex-1 truncate text-[15px] font-bold tracking-tight">{t('app.name')}</span>
+              <span className="flex-1 truncate text-[15px] font-bold tracking-tight">{siteName}</span>
               <NotificationBell />
             </>
           )}
@@ -148,7 +152,7 @@ export function AppShell() {
         <header className="pt-safe sticky top-0 z-30 flex items-center gap-2 border-b border-line bg-surface/85 px-4 backdrop-blur md:hidden">
           <div className="flex h-14 flex-1 items-center gap-2.5">
             <Logo />
-            <span className="text-[15px] font-bold tracking-tight">{t('app.name')}</span>
+            <span className="text-[15px] font-bold tracking-tight">{siteName}</span>
           </div>
           <IconButton label={t('nav.commandHint')} icon={<Search />} onClick={openPalette} />
           <NotificationBell />
@@ -206,13 +210,22 @@ export function AppShell() {
   )
 }
 
+/** Site name and icon chosen in admin settings (empty name = the default). */
+export function useSite() {
+  const t = useT()
+  const q = useQuery({ queryKey: ['config'], queryFn: () => api<{ siteName?: string; siteIcon?: string }>('/api/config'), staleTime: 300_000 })
+  return { name: q.data?.siteName || t('app.name'), icon: q.data?.siteIcon ?? 'doc' }
+}
+
 export function Logo({ className }: { className?: string }) {
+  const { icon } = useSite()
+  const Custom = icon !== 'doc' ? SITE_ICONS[icon] : undefined
   return (
     <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-accent text-accent-fg shadow-sm', className)}>
-      <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {Custom ? <Custom className="size-[18px]" /> : <svg viewBox="0 0 24 24" className="size-[18px]" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M7 4h7l4 4v12H7z" />
         <path d="M14 4v4h4M10 13h5M10 16.5h3" />
-      </svg>
+      </svg>}
     </span>
   )
 }

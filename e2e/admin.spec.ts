@@ -33,7 +33,7 @@ test('admin: activity filters and CSV, member page, usage, site settings', async
   // MS-44: activity filtered by member and module lives in the URL; CSV matches.
   await page.goto(`/admin?tab=activity&actor=${st.user.id}`)
   await expect(page.getByText(new RegExp(`${studentName} 建立了會議紀錄`)).first()).toBeVisible()
-  await page.getByLabel('篩選模組').selectOption('issue')
+  await page.getByLabel('類型').selectOption('issue')
   await expect(page).toHaveURL(/type=issue/)
   await expect(page.getByText(/整理實驗紀錄/).first()).toBeVisible()
   await expect(page.getByText(/建立了會議紀錄/)).toHaveCount(0)

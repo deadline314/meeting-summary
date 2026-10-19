@@ -393,3 +393,9 @@ export const savedViews = sqliteTable(
   },
   (t) => [index('saved_views_user').on(t.userId)],
 )
+
+/** Approximate request count per UTC day (flushed from each isolate about once a minute). */
+export const usageDaily = sqliteTable('usage_daily', {
+  day: text('day').primaryKey(),
+  requests: integer('requests').notNull().default(0),
+})
