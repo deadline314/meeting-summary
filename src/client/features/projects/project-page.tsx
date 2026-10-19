@@ -1,5 +1,5 @@
-import { useNavigate } from '@tanstack/react-router'
-import { CalendarRange, FolderKanban, Inbox, Kanban, List, Plus, Search, Settings2, SlidersHorizontal } from 'lucide-react'
+import { useNavigate, useRouter } from '@tanstack/react-router'
+import { BarChart3, CalendarRange, FolderKanban, Inbox, Kanban, List, Plus, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
 import { useDebounced, useIsMobile } from '../../lib/hooks'
@@ -14,9 +14,11 @@ import { PRIORITIES, canWrite, useLabels, useProject, useProjects } from './mode
 import { useAssigneeOptions } from './pickers'
 import { NewProjectDialog, VisibilityBadge } from './projects-layout'
 import { ProjectSettings, type SettingsTab } from './project-settings'
+import { SaveViewButton, useViews } from './saved-views'
+import { ProjectStats } from './stats'
 import { IssueTimeline } from './timeline'
 
-export type ProjectSearch = Filters & { view?: 'list' | 'board' | 'timeline'; settings?: SettingsTab }
+export type ProjectSearch = Filters & { view?: 'list' | 'board' | 'timeline' | 'stats'; settings?: SettingsTab }
 
 function Toolbar({
   search,
@@ -47,6 +49,7 @@ function Toolbar({
           { id: 'pm-board', label: 'pm.goBoard' as MsgKey, keys: 'g b', group: 'nav.projects' as MsgKey, run: () => setSearch({ view: 'board' }) },
           { id: 'pm-list', label: 'pm.goList' as MsgKey, keys: 'g l', group: 'nav.projects' as MsgKey, run: () => setSearch({ view: undefined }) },
           { id: 'pm-timeline', label: 'pm.goTimeline' as MsgKey, keys: 'g t', group: 'nav.projects' as MsgKey, run: () => setSearch({ view: 'timeline' }) },
+          { id: 'pm-stats', label: 'pm.goStats' as MsgKey, keys: 'g i', group: 'nav.projects' as MsgKey, run: () => setSearch({ view: 'stats' }) },
         ]
       : []),
   ])
@@ -64,6 +67,7 @@ function Toolbar({
             { value: 'list', label: t('pm.view.list'), icon: <List /> },
             { value: 'board', label: t('pm.view.board'), icon: <Kanban /> },
             { value: 'timeline', label: t('pm.view.timeline'), icon: <CalendarRange /> },
+            { value: 'stats', label: t('pm.view.stats'), icon: <BarChart3 /> },
           ]}
         />
       )}
@@ -128,11 +132,28 @@ function MobileProjectPicker({ current }: { current?: string }) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const projects = useProjects()
+  const views = useViews()
+  const router = useRouter()
   const [creating, setCreating] = useState(false)
   return (
     <div className="flex items-center gap-2 border-b border-line px-4 py-2 lg:hidden">
-      <Select value={current ?? ''} onChange={(e) => navigate({ to: e.target.value ? `/projects/${e.target.value}` : '/projects' })} aria-label={t('pm.projects')} className="h-10 flex-1">
+      <Select
+        value={current ?? (location.pathname === '/projects/timeline' ? '/projects/timeline' : '')}
+        onChange={(e) => (e.target.value.startsWith('/') ? router.history.push(e.target.value) : navigate({ to: e.target.value ? `/projects/${e.target.value}` : '/projects' }))}
+        aria-label={t('pm.projects')}
+        className="h-10 flex-1"
+      >
         <option value="">{t('pm.myIssues')}</option>
+        <option value="/projects/timeline">{t('tl.overview')}</option>
+        {!!views.data?.length && (
+          <optgroup label={t('views.title')}>
+            {views.data.map((v) => (
+              <option key={v.id} value={v.url}>
+                {v.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
         {(projects.data ?? []).map((p) => (
           <option key={p.id} value={p.key}>
             {p.key} · {p.name}
@@ -161,6 +182,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
           <h1 className="text-lg font-bold tracking-tight md:text-xl">{t('pm.myIssues')}</h1>
           <p className="text-xs text-fg-4">{t('pm.myIssuesHint')}</p>
         </div>
+        <SaveViewButton />
         <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => openCreateIssue()} disabled={!projects.data?.some((p) => canWrite(p.role) && p.state === 'active')} title="C">
           {t('pm.new')}
         </Button>
@@ -217,6 +239,7 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
           </h1>
           {p.description && <p className="truncate text-xs text-fg-4">{p.description}</p>}
         </div>
+        <SaveViewButton />
         <IconButton label={t('pm.settings')} icon={<Settings2 />} variant="secondary" onClick={() => setSearch({ settings: 'general' })} />
         {writable && (
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => openCreateIssue({ projectKey: p.key })} title="C">
@@ -228,6 +251,8 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
       <ViewProvider key={p.key} scope={{ key: p.key }} role={p.role} labels={labels.data ?? []} memberIds={p.members.map((m) => m.userId)}>
         {search.view === 'board' ? (
           <IssueBoard filters={filters} />
+        ) : search.view === 'stats' ? (
+          <ProjectStats projectKey={p.key} />
         ) : search.view === 'timeline' ? (
           <IssueTimeline scope={{ key: p.key }} filters={filters} />
         ) : (

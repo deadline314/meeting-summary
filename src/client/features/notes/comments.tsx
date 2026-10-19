@@ -61,7 +61,6 @@ export function CommentsPanel({
   useEffect(() => {
     if (!activeId) return
     listRef.current?.querySelector(`[data-thread="${activeId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId])
 
   return (

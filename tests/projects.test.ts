@@ -154,4 +154,28 @@ describe('projects & issues', () => {
     expect(tl.items[0]!.segments.map((s) => s.status)).toEqual(['todo', 'in_progress', 'done'])
     expect(tl.items[0]!.segments.every((s) => s.to !== null)).toBe(true)
   })
+  it('stats count finished issues; saved views are per user and capped', async () => {
+    const { a, k } = await setup()
+    const i = (await a.call<{ issue: Issue }>(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 's' } })).body.issue
+    const v2 = (await a.call<{ issue: Issue }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: i.version, status: 'in_progress' } })).body.issue
+    await a.call(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: v2.version, status: 'done' } })
+    await a.call(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'open' } })
+    const st = (await a.call<{ lead: { n: number } | null; cycle: { n: number } | null; weeks: { done: number }[] }>(`/api/projects/${k}/stats`)).body
+    expect(st.lead!.n).toBe(1)
+    expect(st.cycle!.n).toBe(1)
+    expect(st.weeks).toHaveLength(12)
+    expect(st.weeks[11]!.done).toBe(1)
+    expect((await a.call(`/api/projects/${k}`, { method: 'PATCH', body: { staleDays: 5 } })).status).toBe(400)
+    expect((await a.call(`/api/projects/${k}`, { method: 'PATCH', body: { staleDays: 14 } })).status).toBe(200)
+
+    expect((await a.call('/api/saved-views', { method: 'POST', body: { name: 'x', url: 'https://evil.example/' } })).status).toBe(400)
+    const v = (await a.call<{ view: { id: string } }>('/api/saved-views', { method: 'POST', body: { name: 'mine', url: `/projects/${k}?view=board` } })).body.view
+    await a.call(`/api/saved-views/${v.id}`, { method: 'PATCH', body: { name: 'renamed' } })
+    const b = await login(uniq('pv'))
+    expect((await b.call<{ items: unknown[] }>('/api/saved-views')).body.items).toHaveLength(0)
+    expect((await b.call(`/api/saved-views/${v.id}`, { method: 'PATCH', body: { name: 'hijack' } })).status).toBe(404)
+    for (let n = 1; n < 30; n++) await a.call('/api/saved-views', { method: 'POST', body: { name: `v${n}`, url: '/projects' } })
+    expect((await a.call('/api/saved-views', { method: 'POST', body: { name: 'one too many', url: '/projects' } })).status).toBe(422)
+    expect((await a.call<{ items: { name: string }[] }>('/api/saved-views')).body.items[0]!.name).toBe('renamed')
+  })
 })

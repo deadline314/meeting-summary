@@ -68,7 +68,7 @@ export function appRoutes(parent: AnyRoute) {
   })
 
   const pmSearch = z.object({
-    view: z.enum(['list', 'board', 'timeline']).optional(),
+    view: z.enum(['list', 'board', 'timeline', 'stats']).optional(),
     assigneeId: z.string().optional(),
     priority: z.string().optional(),
     labelId: z.string().optional(),

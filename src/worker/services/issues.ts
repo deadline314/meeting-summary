@@ -269,6 +269,52 @@ export async function issueDetail(ctx: Ctx, ref: string) {
   }
 }
 
+const WEEK = 7 * 86400_000
+
+/**
+ * Project statistics, all derived from the same status segments as the timeline:
+ * lead time (created → done), cycle time (first in progress → done), average time per
+ * status (finished segments only) and issues completed in each of the last 12 weeks.
+ */
+export async function issueStats(ctx: Ctx, key: string) {
+  const { items, total } = await issueTimeline(ctx, { key }, {})
+  const lead: number[] = []
+  const cycle: number[] = []
+  const inStatus = new Map<Status, number[]>()
+  const now = Date.now()
+  const weekStart = (() => {
+    const d = new Date(now)
+    d.setUTCHours(0, 0, 0, 0)
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+    return d.getTime()
+  })()
+  const weeks = Array.from({ length: 12 }, (_, i) => ({ start: weekStart - (11 - i) * WEEK, done: 0 }))
+  for (const it of items) {
+    for (const s of it.segments) if (s.to !== null && s.to > s.from) inStatus.set(s.status, [...(inStatus.get(s.status) ?? []), s.to - s.from])
+    const done = it.segments.find((s) => s.status === 'done')
+    if (!done) continue
+    lead.push(done.from - it.createdAt)
+    const started = it.segments.find((s) => s.status === 'in_progress')
+    if (started) cycle.push(done.from - started.from)
+    const w = weeks.find((x) => done.from >= x.start && done.from < x.start + WEEK)
+    if (w) w.done++
+  }
+  const summary = (xs: number[]) => {
+    if (!xs.length) return null
+    const sorted = [...xs].sort((a, b) => a - b)
+    const mid = sorted.length >> 1
+    return { avg: xs.reduce((a, b) => a + b, 0) / xs.length, median: sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2, n: xs.length }
+  }
+  return {
+    total,
+    sampled: items.length,
+    lead: summary(lead),
+    cycle: summary(cycle),
+    statuses: ISSUE_STATUSES.filter((s) => !DONE.includes(s)).map((s) => ({ status: s, ...summary(inStatus.get(s) ?? []) })),
+    weeks,
+  }
+}
+
 // ---------- writes ----------
 
 export type IssueInput = {

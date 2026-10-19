@@ -14,6 +14,7 @@ import { Tooltip } from '../../ui/tooltip'
 import { CreateIssueHost, openCreateIssue } from './create-issue'
 import { DuplicateIssueHost } from './duplicate-issue'
 import { useProjects, type ProjectRow } from './model'
+import { SavedViewsNav } from './saved-views'
 
 export function ProjectsLayout() {
   const [creating, setCreating] = useState(false)
@@ -63,6 +64,7 @@ export function ProjectNav({ onNew }: { onNew(): void }) {
     <nav className="flex flex-col gap-0.5 p-3">
       {item('/projects', <Inbox />, t('pm.myIssues'), path === '/projects')}
       {item('/projects/timeline', <CalendarRange />, t('tl.overview'), path === '/projects/timeline')}
+      <SavedViewsNav />
       <div className="mt-4 mb-1 flex items-center justify-between px-2.5">
         <span className="text-[11px] font-semibold tracking-wide text-fg-4 uppercase">{t('pm.projects')}</span>
         <IconButton label={t('pm.newProject')} icon={<Plus />} size="sm" onClick={onNew} className="-mr-1.5 size-7" />

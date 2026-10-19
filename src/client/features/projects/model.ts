@@ -22,6 +22,7 @@ export type ProjectRow = {
   memberCount: number
   private: boolean
   openIssues: number
+  staleDays: number
   version: number
 }
 

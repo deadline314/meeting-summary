@@ -22,6 +22,7 @@ export const ERROR_CODES = [
   'depth_exceeded',
   'not_visible',
   'scope',
+  'limit_reached',
   'internal',
 ] as const
 export type ErrorCode = (typeof ERROR_CODES)[number]

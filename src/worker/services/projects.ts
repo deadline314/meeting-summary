@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { Ctx } from '../context'
 import { isAdmin, requireScope } from '../context'
-import { issueAssignees, issues, labels, projectMembers, projects, users } from '../db/schema'
+import { issueAssignees, issues, labels, projectMembers, projects, savedViews, users } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { AppError, conflict, notFound } from '../lib/errors'
 import { activity } from './activity'
@@ -100,6 +100,7 @@ export async function createProject(ctx: Ctx, input: { key: string; name: string
     state: 'active',
     hiddenFromAdmins: false,
     issueSeq: 0,
+    staleDays: 7,
     createdBy: ctx.user.id,
     createdAt: now,
     updatedAt: now,
@@ -137,7 +138,7 @@ export async function updateProject(
   ctx: Ctx,
   key: string,
   version: number | undefined,
-  patch: Partial<Pick<Project, 'name' | 'description' | 'reviewerId' | 'targetDate' | 'hiddenFromAdmins' | 'parentId'>>,
+  patch: Partial<Pick<Project, 'name' | 'description' | 'reviewerId' | 'targetDate' | 'hiddenFromAdmins' | 'parentId' | 'staleDays'>>,
 ) {
   requireScope(ctx, 'manage')
   const { project: p, role } = await access(ctx, { key })
@@ -296,4 +297,29 @@ export async function deleteLabel(ctx: Ctx, key: string, labelId: string) {
   const { project: p, role } = await access(ctx, { key })
   need(role, 'owner')
   await ctx.db.delete(labels).where(and(eq(labels.id, labelId), eq(labels.projectId, p.id)))
+}
+
+// ---------- saved views ----------
+
+const MAX_VIEWS = 30
+
+export const listSavedViews = (ctx: Ctx) => ctx.db.select().from(savedViews).where(eq(savedViews.userId, ctx.user.id)).orderBy(savedViews.createdAt).all()
+
+/** Saves a PM page URL under a name; only same-site `/projects…` paths are accepted. */
+export async function saveView(ctx: Ctx, name: string, url: string) {
+  if (!url.startsWith('/projects')) throw new AppError('bad_request', 400, 'Only project pages can be saved')
+  const n = await ctx.db.select({ n: sql<number>`count(*)` }).from(savedViews).where(eq(savedViews.userId, ctx.user.id)).get()
+  if ((n?.n ?? 0) >= MAX_VIEWS) throw new AppError('limit_reached', 422, 'At most 30 saved views', { limit: String(MAX_VIEWS) })
+  const row = { id: newId(), userId: ctx.user.id, name, url, createdAt: Date.now() }
+  await ctx.db.insert(savedViews).values(row)
+  return row
+}
+
+export async function renameView(ctx: Ctx, id: string, name: string) {
+  const r = await ctx.db.update(savedViews).set({ name }).where(and(eq(savedViews.id, id), eq(savedViews.userId, ctx.user.id))).run()
+  if (!r.meta.changes) throw notFound()
+}
+
+export async function deleteView(ctx: Ctx, id: string) {
+  await ctx.db.delete(savedViews).where(and(eq(savedViews.id, id), eq(savedViews.userId, ctx.user.id)))
 }

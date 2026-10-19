@@ -1,11 +1,12 @@
 import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, Copy, CopyPlus, GitBranch, Link2, Plus, Trash2, UserPlus } from 'lucide-react'
+import { AlarmClock, ChevronDown, ChevronRight, Copy, CopyPlus, GitBranch, Link2, Plus, Trash2, UserPlus } from 'lucide-react'
 import { ContextMenu as CM } from 'radix-ui'
 import { AnimatePresence, motion } from 'motion/react'
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useActions } from '../../lib/actions'
 import { ApiError, api, queryClient } from '../../lib/api'
+import { useNow } from '../../lib/hooks'
 import { useI18n, type MsgKey } from '../../lib/i18n'
 import { useMe } from '../../lib/session'
 import { AvatarStack } from '../../ui/avatar'
@@ -18,7 +19,7 @@ import { Tooltip } from '../../ui/tooltip'
 import { openCreateIssue } from './create-issue'
 import { openDuplicate } from './duplicate-issue'
 import { IssueStatusIcon, PriorityIcon } from './icons'
-import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, rememberNav, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
+import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, rememberNav, useProjects, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
 import { LabelChip, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 export type Scope = { key?: string; mine?: boolean }
@@ -353,6 +354,7 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
         <span className={cx('flex min-w-0 flex-1 items-center gap-1.5', issue.status === 'canceled' && 'text-fg-4 line-through')}>
           <Prefix issue={issue} />
           <span className="truncate">{issue.title}</span>
+          <StaleBadge issue={issue} />
           {issue.subProgress && (
             <span className="shrink-0 rounded bg-surface-2 px-1 text-[11px] text-fg-4">
               {issue.subProgress.done}/{issue.subProgress.total}
@@ -373,6 +375,25 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
     </IssueContextMenu>
   )
 })
+
+/** ⏰ when an unfinished issue has sat in one status longer than the project's threshold. */
+export function StaleBadge({ issue, withText }: { issue: Pick<IssueRow, 'status' | 'statusChangedAt' | 'projectKey'>; withText?: boolean }) {
+  const { t, fmt } = useI18n()
+  const projects = useProjects()
+  const now = useNow(60_000)
+  const limit = projects.data?.find((p) => p.key === issue.projectKey)?.staleDays ?? 7
+  const days = Math.floor((now - issue.statusChangedAt) / 86400_000)
+  if (isDone(issue.status) || days < limit) return null
+  const text = t('issue.stale', { status: t(`status.${issue.status}` as MsgKey), days })
+  return (
+    <Tooltip label={withText ? fmt.dateTime(issue.statusChangedAt) : text}>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-soft px-1.5 py-0.5 text-[11px] font-medium text-warning" aria-label={text}>
+        <AlarmClock className="size-3.5" />
+        {withText ? text : t('tl.days', { n: days })}
+      </span>
+    </Tooltip>
+  )
+}
 
 /** "Blocker title +N ⃠" (warm) and "Parent ›" prefixes; blockers only count while unfinished. */
 function Prefix({ issue }: { issue: IssueRow }) {
@@ -754,6 +775,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
         <div className={cx('flex flex-wrap items-center gap-1', issue.status === 'canceled' && 'text-fg-4 line-through')}>
           <Prefix issue={issue} />
           <span className="leading-snug">{issue.title}</span>
+          <StaleBadge issue={issue} />
         </div>
         {issue.labels.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">

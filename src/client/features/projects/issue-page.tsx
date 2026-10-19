@@ -1,11 +1,11 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { AlarmClock, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, Paperclip, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, Paperclip, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
 import { ApiError, api } from '../../lib/api'
-import { useIsMobile, useNow } from '../../lib/hooks'
+import { useIsMobile } from '../../lib/hooks'
 import { useI18n, type MsgKey } from '../../lib/i18n'
 import { renderMarkdown } from '../../lib/markdown'
 import { useDirectory, useMe } from '../../lib/session'
@@ -23,6 +23,7 @@ import { confirm } from '../../ui/dialog'
 import { Composer } from '../notes/comments'
 import { Html } from '../notes/preview'
 import { openDuplicate } from './duplicate-issue'
+import { StaleBadge } from './issue-views'
 import { IssueStatusIcon, PriorityIcon } from './icons'
 import { canWrite, invalidateIssues, isDone, readNav, useLabels, useProject, type IssuePatch, type IssueRow, type Status } from './model'
 import { AssigneeIcon, LabelChip, LabelIcon, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
@@ -33,8 +34,6 @@ type Detail = {
   children: { ref: string; title: string; status: string; assigneeIds: string[] }[]
   mentionedIn: { id: string; title: string; startsAt: number }[]
 }
-
-const STALE_DAYS = 7
 
 export function IssuePage({ projectKey, issueRef }: { projectKey: string; issueRef: string }) {
   const q = useQuery({ queryKey: ['issue', issueRef], queryFn: () => api<Detail>(`/api/issues/${issueRef}`), refetchInterval: 20_000 })
@@ -57,7 +56,6 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
   const labels = useLabels(projectKey)
   // The version this page started from; a newer one from polling means someone else edited.
   const [base, setBase] = useState<number | null>(d.issue.version)
-  const now = useNow(60_000)
   const mobile = useIsMobile()
   const nav = useMemo(() => readNav(), [])
   const idx = nav?.refs.indexOf(issueRef) ?? -1
@@ -84,7 +82,6 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
       qc.invalidateQueries({ queryKey: ['issue', i.ref] }).then(() => setBase(qc.getQueryData<Detail>(['issue', i.ref])?.issue.version ?? null))
     }
   }
-  const stale = !isDone(i.status) && now - i.statusChangedAt > STALE_DAYS * 86400_000
   const back = nav?.from && nav.refs.includes(issueRef) ? nav.from : `/projects/${projectKey}`
 
   return (
@@ -178,14 +175,9 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
               <UserName id={i.createdBy} className="text-fg-3" />
               <span title={fmt.dateTime(i.createdAt)}>· {fmt.relative(i.createdAt)}</span>
             </span>
-            {stale && (
-              <Tooltip label={fmt.dateTime(i.statusChangedAt)}>
-                <span className="inline-flex items-center gap-1 self-start rounded-full bg-warning-soft px-2 py-0.5 font-medium text-warning">
-                  <AlarmClock className="size-3.5" />
-                  {t('issue.stale', { status: t(`status.${i.status}` as MsgKey), days: Math.floor((now - i.statusChangedAt) / 86400_000) })}
-                </span>
-              </Tooltip>
-            )}
+            <span className="self-start">
+              <StaleBadge issue={i} withText />
+            </span>
           </div>
         </aside>
       </div>

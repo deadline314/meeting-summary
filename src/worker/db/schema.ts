@@ -259,6 +259,7 @@ export const projects = sqliteTable(
     state: text('state', { enum: ['active', 'closed', 'archived'] }).notNull().default('active'),
     hiddenFromAdmins: integer('hidden_from_admins', { mode: 'boolean' }).notNull().default(false),
     issueSeq: integer('issue_seq').notNull().default(0),
+    staleDays: integer('stale_days').notNull().default(7),
     createdBy: text('created_by').notNull(),
     createdAt: ts('created_at').notNull(),
     updatedAt: ts('updated_at').notNull(),
@@ -378,4 +379,17 @@ export const references = sqliteTable(
     primaryKey({ columns: [t.sourceType, t.sourceId, t.targetType, t.targetId] }),
     index('references_target').on(t.targetType, t.targetId),
   ],
+)
+
+/** A named copy of a PM page URL (filters, sort and view all live in the URL). */
+export const savedViews = sqliteTable(
+  'saved_views',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('saved_views_user').on(t.userId)],
 )

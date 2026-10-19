@@ -53,6 +53,8 @@ function General({ p }: { p: ProjectDetail }) {
   const [name, setName] = useState(p.name)
   const [description, setDescription] = useState(p.description)
   const [reviewerId, setReviewer] = useState(p.reviewerId ?? '')
+  const [target, setTarget] = useState(p.targetDate ? new Date(p.targetDate).toISOString().slice(0, 10) : '')
+  const [staleDays, setStaleDays] = useState(p.staleDays)
   const [busy, setBusy] = useState(false)
   const save = async (patch: Record<string, unknown>) => {
     setBusy(true)
@@ -84,6 +86,22 @@ function General({ p }: { p: ProjectDetail }) {
           </Select>
         )}
       </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t('pm.field.target')}>
+          {(id) => <Input id={id} type="date" value={target} disabled={!editable} onChange={(e) => setTarget(e.target.value)} />}
+        </Field>
+        <Field label={t('pm.field.stale')} hint={t('pm.field.staleHint')}>
+          {(id) => (
+            <Select id={id} value={staleDays} disabled={!editable} onChange={(e) => setStaleDays(Number(e.target.value))}>
+              {[3, 7, 14, 30].map((d) => (
+                <option key={d} value={d}>
+                  {t('tl.days', { n: d })}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      </div>
       {p.role === 'owner' && (
         <label className="flex items-start gap-3 rounded-xl border border-line p-3 text-sm">
           <input type="checkbox" className="mt-0.5 size-4 accent-accent" checked={p.hiddenFromAdmins} onChange={(e) => save({ hiddenFromAdmins: e.target.checked })} />
@@ -94,7 +112,7 @@ function General({ p }: { p: ProjectDetail }) {
         </label>
       )}
       {editable && (
-        <Button variant="primary" className="self-end" loading={busy} onClick={() => save({ name: name.trim(), description, reviewerId: reviewerId || null })}>
+        <Button variant="primary" className="self-end" loading={busy} onClick={() => save({ name: name.trim(), description, reviewerId: reviewerId || null, targetDate: target ? new Date(`${target}T23:59:00`).getTime() : null, staleDays })}>
           {t('common.save')}
         </Button>
       )}

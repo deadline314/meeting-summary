@@ -16,6 +16,7 @@ import {
   idempotent,
   issueDetail,
   duplicateIssue,
+  issueStats,
   issueTimeline,
   listIssues,
   moveIssue,
@@ -34,6 +35,10 @@ import {
   listLabels,
   listProjects,
   projectDto,
+  deleteView,
+  listSavedViews,
+  renameView,
+  saveView,
   removeMember,
   setMemberRole,
   setProjectState,
@@ -82,6 +87,7 @@ projectRoutes.patch('/projects/:key', async (c) => {
       targetDate: z.number().int().nullable().optional(),
       hiddenFromAdmins: z.boolean().optional(),
       parentId: z.string().nullable().optional(),
+      staleDays: z.union([z.literal(3), z.literal(7), z.literal(14), z.literal(30)]).optional(),
     }),
   )
   const p = await updateProject(ctx, c.req.param('key'), version, patch)
@@ -144,6 +150,23 @@ projectRoutes.get('/projects/:key/counts', async (c) => {
   const { status: _s, offset: _o, limit: _l, ...f } = parse(filter, c.req.query())
   return c.json(await statusCounts(ctxOf(c), { key: c.req.param('key') }, f))
 })
+projectRoutes.get('/projects/:key/stats', async (c) => c.json(await issueStats(ctxOf(c), c.req.param('key'))))
+
+projectRoutes.get('/saved-views', async (c) => c.json({ items: await listSavedViews(ctxOf(c)) }))
+projectRoutes.post('/saved-views', async (c) => {
+  const input = await body(c, z.object({ name: z.string().trim().min(1).max(60), url: z.string().min(1).max(2000) }))
+  return c.json({ view: await saveView(ctxOf(c), input.name, input.url) }, 201)
+})
+projectRoutes.patch('/saved-views/:id', async (c) => {
+  const { name } = await body(c, z.object({ name: z.string().trim().min(1).max(60) }))
+  await renameView(ctxOf(c), c.req.param('id'), name)
+  return c.json({ ok: true })
+})
+projectRoutes.delete('/saved-views/:id', async (c) => {
+  await deleteView(ctxOf(c), c.req.param('id'))
+  return c.json({ ok: true })
+})
+
 projectRoutes.get('/timeline', async (c) => {
   const q = parse(filter.omit({ status: true, sort: true, offset: true, limit: true }).extend({ key: z.string().optional() }), c.req.query())
   return c.json(await issueTimeline(ctxOf(c), { key: q.key }, q))
