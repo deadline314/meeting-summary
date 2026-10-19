@@ -38,3 +38,12 @@ const CAST: Record<string, [string, string, string]> = {
   'mobile-dark': ['蔡依林', '劉德華', '鄭教授'],
 }
 export const cast = (info: TestInfo) => CAST[info.project.name] ?? ['A', 'B', 'T']
+
+// Separate people for the project-management spec (names must be unique in the shared database).
+const CAST_PM: Record<string, [string, string]> = {
+  'desktop-light': ['郭雅婷', '何俊宏'],
+  'desktop-dark': ['羅美玲', '謝宗翰'],
+  'mobile-light': ['曾子涵', '彭冠宇'],
+  'mobile-dark': ['簡佩珊', '鍾承翰'],
+}
+export const castPm = (info: TestInfo) => CAST_PM[info.project.name] ?? ['A', 'B']

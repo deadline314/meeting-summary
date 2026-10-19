@@ -1,0 +1,530 @@
+import { and, asc, desc, eq, gt, inArray, isNull, like, lt, or, sql, type SQL } from 'drizzle-orm'
+import type { Ctx } from '../context'
+import { requireScope } from '../context'
+import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, idempotency, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, notes, projects, references } from '../db/schema'
+import { newId } from '../lib/crypto'
+import { AppError, badRequest, conflict, notFound } from '../lib/errors'
+import { activity } from './activity'
+import { parentChecks } from './files'
+import { mentionedUserIds, notify } from './notify'
+import { access, need, requireActive, userCanSee, visibleProjectIds, type Access, type Project } from './projects'
+
+export type Issue = typeof issues.$inferSelect
+export type Status = (typeof ISSUE_STATUSES)[number]
+export type Priority = (typeof ISSUE_PRIORITIES)[number]
+const DONE: Status[] = ['done', 'canceled']
+const MAX_DEPTH = 10
+
+export function parseRef(ref: string) {
+  const m = /^([A-Za-z]{2,6})-(\d+)$/.exec(ref.trim())
+  if (!m) throw notFound()
+  return { key: m[1]!.toUpperCase(), number: Number(m[2]) }
+}
+
+/** Runs `fn` once per (user, operationId): retries of the same external write return the first result. */
+export async function idempotent<T>(ctx: Ctx, operationId: string | undefined, fn: () => Promise<T>): Promise<T> {
+  if (!operationId) return fn()
+  const key = `${ctx.user.id}:${operationId}`
+  const prev = await ctx.db.select().from(idempotency).where(eq(idempotency.key, key)).get()
+  if (prev) return prev.response as T
+  const out = await fn()
+  await ctx.db.insert(idempotency).values({ key, response: out as unknown, createdAt: Date.now() }).onConflictDoNothing()
+  return out
+}
+
+export async function getIssue(ctx: Ctx, ref: string) {
+  const { key, number } = parseRef(ref)
+  const { project, role } = await access(ctx, { key })
+  const issue = await ctx.db
+    .select()
+    .from(issues)
+    .where(and(eq(issues.projectId, project.id), eq(issues.number, number), isNull(issues.deletedAt)))
+    .get()
+  if (!issue) throw notFound()
+  return { issue, project, role }
+}
+
+const refOf = (p: Pick<Project, 'key'>, i: Pick<Issue, 'number'>) => `${p.key}-${i.number}`
+
+// ---------- read models ----------
+
+/** Adds assignees, labels, open blockers, parent and sub-issue progress to a page of issues. */
+export async function hydrate(ctx: Ctx, rows: Issue[], keyById: Map<string, string>) {
+  if (!rows.length) return []
+  const ids = rows.map((r) => r.id)
+  const [assignees, labelRows, blockers, children, parents] = await Promise.all([
+    ctx.db.select().from(issueAssignees).where(inArray(issueAssignees.issueId, ids)).orderBy(asc(issueAssignees.position)).all(),
+    ctx.db
+      .select({ issueId: issueLabels.issueId, id: labels.id, name: labels.name, color: labels.color })
+      .from(issueLabels)
+      .innerJoin(labels, eq(labels.id, issueLabels.labelId))
+      .where(inArray(issueLabels.issueId, ids))
+      .all(),
+    // "blocked by" is derived from `blocks` edges, and only unfinished blockers count.
+    ctx.db
+      .select({ toId: issueRelations.toId, id: issues.id, number: issues.number, title: issues.title, projectId: issues.projectId })
+      .from(issueRelations)
+      .innerJoin(issues, eq(issues.id, issueRelations.fromId))
+      .where(and(inArray(issueRelations.toId, ids), eq(issueRelations.type, 'blocks'), sql`${issues.status} not in ('done','canceled')`, isNull(issues.deletedAt)))
+      .all(),
+    ctx.db
+      .select({ parentId: issues.parentId, done: sql<number>`sum(case when ${issues.status} in ('done','canceled') then 1 else 0 end)`, total: sql<number>`count(*)` })
+      .from(issues)
+      .where(and(inArray(issues.parentId, ids), isNull(issues.deletedAt)))
+      .groupBy(issues.parentId)
+      .all(),
+    ctx.db
+      .select({ id: issues.id, number: issues.number, title: issues.title, projectId: issues.projectId })
+      .from(issues)
+      .where(inArray(issues.id, rows.map((r) => r.parentId).filter((x): x is string => !!x)))
+      .all(),
+  ])
+  const keyOf = (pid: string) => keyById.get(pid) ?? '?'
+  return rows.map((r) => {
+    const parent = parents.find((p) => p.id === r.parentId)
+    const sub = children.find((c) => c.parentId === r.id)
+    return {
+      ...r,
+      ref: `${keyOf(r.projectId)}-${r.number}`,
+      projectKey: keyOf(r.projectId),
+      assigneeIds: assignees.filter((a) => a.issueId === r.id).map((a) => a.userId),
+      labels: labelRows.filter((l) => l.issueId === r.id).map(({ issueId: _i, ...l }) => l),
+      blockedBy: blockers.filter((b) => b.toId === r.id).map((b) => ({ ref: `${keyOf(b.projectId)}-${b.number}`, title: b.title })),
+      parent: parent ? { ref: `${keyOf(parent.projectId)}-${parent.number}`, title: parent.title } : null,
+      subProgress: sub ? { done: Number(sub.done), total: Number(sub.total) } : null,
+    }
+  })
+}
+
+async function keyMap(ctx: Ctx, projectIds: string[]) {
+  if (!projectIds.length) return new Map<string, string>()
+  const rows = await ctx.db.select({ id: projects.id, key: projects.key }).from(projects).where(inArray(projects.id, projectIds)).all()
+  return new Map(rows.map((r) => [r.id, r.key]))
+}
+
+export type IssueFilter = {
+  status?: Status
+  assigneeId?: string
+  priority?: Priority
+  labelId?: string
+  q?: string
+  sort?: 'manual' | 'created' | 'updated' | 'priority' | 'due'
+  doneSince?: number
+  offset: number
+  limit: number
+}
+
+const PRIORITY_RANK = sql`case ${issues.priority} when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 when 'low' then 3 else 4 end`
+
+/** One status at a time, each with its own page — a status group never vanishes because of another's size. */
+export async function listIssues(ctx: Ctx, scope: { key?: string; mine?: boolean }, f: IssueFilter) {
+  let projectIds: string[]
+  if (scope.key) projectIds = [(await access(ctx, { key: scope.key })).project.id]
+  else projectIds = await visibleProjectIds(ctx)
+  if (!projectIds.length) return { items: [], total: 0 }
+  const where = and(
+    inArray(issues.projectId, projectIds),
+    isNull(issues.deletedAt),
+    f.status ? eq(issues.status, f.status) : undefined,
+    f.priority ? eq(issues.priority, f.priority) : undefined,
+    scope.mine ? sql`exists (select 1 from issue_assignees a where a.issue_id = ${issues.id} and a.user_id = ${ctx.user.id})` : undefined,
+    f.assigneeId ? sql`exists (select 1 from issue_assignees a where a.issue_id = ${issues.id} and a.user_id = ${f.assigneeId})` : undefined,
+    f.labelId ? sql`exists (select 1 from issue_labels l where l.issue_id = ${issues.id} and l.label_id = ${f.labelId})` : undefined,
+    f.q ? or(like(issues.title, `%${f.q}%`), like(issues.description, `%${f.q}%`)) : undefined,
+    f.doneSince && f.status && DONE.includes(f.status) ? gt(issues.statusChangedAt, f.doneSince) : undefined,
+  )
+  const order: SQL[] =
+    f.sort === 'created'
+      ? [desc(issues.createdAt)]
+      : f.sort === 'updated'
+        ? [desc(issues.updatedAt)]
+        : f.sort === 'priority'
+          ? [PRIORITY_RANK, asc(issues.sortOrder)]
+          : f.sort === 'due'
+            ? [sql`${issues.dueAt} is null`, asc(issues.dueAt)]
+            : [asc(issues.sortOrder)]
+  const [rows, total] = await Promise.all([
+    ctx.db.select().from(issues).where(where).orderBy(...order).limit(f.limit).offset(f.offset).all(),
+    ctx.db.select({ n: sql<number>`count(*)` }).from(issues).where(where).get(),
+  ])
+  return { items: await hydrate(ctx, rows, await keyMap(ctx, projectIds)), total: total?.n ?? 0 }
+}
+
+export async function statusCounts(ctx: Ctx, scope: { key?: string; mine?: boolean }, f: Omit<IssueFilter, 'status' | 'offset' | 'limit'>) {
+  const out: Record<string, number> = {}
+  for (const s of ISSUE_STATUSES) out[s] = (await listIssues(ctx, scope, { ...f, status: s, offset: 0, limit: 0 })).total
+  return out
+}
+
+export async function issueDetail(ctx: Ctx, ref: string) {
+  const { issue, project, role } = await getIssue(ctx, ref)
+  const [h] = await hydrate(ctx, [issue], new Map([[project.id, project.key]]))
+  const rel = await ctx.db
+    .select({ fromId: issueRelations.fromId, toId: issueRelations.toId, type: issueRelations.type })
+    .from(issueRelations)
+    .where(or(eq(issueRelations.fromId, issue.id), eq(issueRelations.toId, issue.id)))
+    .all()
+  const otherIds = rel.map((r) => (r.fromId === issue.id ? r.toId : r.fromId))
+  const visible = new Set(await visibleProjectIds(ctx))
+  const others = otherIds.length
+    ? await ctx.db.select().from(issues).where(and(inArray(issues.id, otherIds), isNull(issues.deletedAt))).all()
+    : []
+  const keys = await keyMap(ctx, [...new Set(others.map((o) => o.projectId))])
+  const relations = rel
+    .map((r) => {
+      const outgoing = r.fromId === issue.id
+      const o = others.find((x) => x.id === (outgoing ? r.toId : r.fromId))
+      if (!o || !visible.has(o.projectId)) return null
+      const type = r.type === 'blocks' ? (outgoing ? 'blocks' : 'blocked_by') : r.type === 'duplicate_of' ? (outgoing ? 'duplicate_of' : 'duplicated_by') : 'relates'
+      return { type, ref: `${keys.get(o.projectId)}-${o.number}`, title: o.title, status: o.status }
+    })
+    .filter(Boolean)
+  const children = await ctx.db.select().from(issues).where(and(eq(issues.parentId, issue.id), isNull(issues.deletedAt))).orderBy(asc(issues.sortOrder)).all()
+  // Meeting notes are matched on their stored text; comments use the references table.
+  const issueRef = refOf(project, issue)
+  const notesMentioning = await ctx.db
+    .select({ id: notes.id, title: notes.title, startsAt: notes.startsAt, visibility: notes.visibility, projectId: notes.projectId })
+    .from(notes)
+    .where(and(isNull(notes.deletedAt), like(notes.content, `%#[issue:${issueRef}]%`)))
+    .orderBy(desc(notes.startsAt))
+    .limit(20)
+    .all()
+  const mentionedIn = notesMentioning
+    .filter((n) => n.visibility === 'site' || !n.projectId || visible.has(n.projectId))
+    .map(({ id, title, startsAt }) => ({ id, title, startsAt }))
+  return {
+    issue: { ...h!, role, projectState: project.state, projectName: project.name },
+    relations,
+    children: (await hydrate(ctx, children, new Map([[project.id, project.key]]))).map(({ ref, title, status, assigneeIds }) => ({ ref, title, status, assigneeIds })),
+    mentionedIn,
+  }
+}
+
+// ---------- writes ----------
+
+export type IssueInput = {
+  title: string
+  description?: string
+  status?: Status
+  priority?: Priority
+  assigneeIds?: string[]
+  labelIds?: string[]
+  parentRef?: string | null
+  dueAt?: number | null
+}
+
+async function assertAssignable(ctx: Ctx, projectId: string, userIds: string[]) {
+  for (const id of userIds) if (!(await userCanSee(ctx, projectId, id))) throw new AppError('not_visible', 422, 'Assignee cannot see this project', { userId: id })
+}
+
+async function assertLabels(ctx: Ctx, projectId: string, labelIds: string[]) {
+  if (!labelIds.length) return
+  const rows = await ctx.db.select({ id: labels.id }).from(labels).where(and(eq(labels.projectId, projectId), inArray(labels.id, labelIds))).all()
+  if (rows.length !== new Set(labelIds).size) throw badRequest('Unknown label')
+}
+
+/** New parent must not be the issue itself, one of its descendants, or exceed 10 levels. */
+async function assertParent(ctx: Ctx, issueId: string | null, parentId: string) {
+  let depth = 1
+  let cur: string | null = parentId
+  while (cur) {
+    if (cur === issueId) throw new AppError('cycle', 422, 'That would create a cycle')
+    const row: { parentId: string | null } | undefined = await ctx.db.select({ parentId: issues.parentId }).from(issues).where(eq(issues.id, cur)).get()
+    cur = row?.parentId ?? null
+    if (++depth > MAX_DEPTH) throw new AppError('depth_exceeded', 422, 'More than 10 levels')
+  }
+}
+
+export async function createIssue(ctx: Ctx, key: string, input: IssueInput) {
+  requireScope(ctx, 'write')
+  const { project, role } = await access(ctx, { key })
+  need(role, 'member')
+  requireActive(project)
+  const assigneeIds = [...new Set(input.assigneeIds ?? [])]
+  await assertAssignable(ctx, project.id, assigneeIds)
+  await assertLabels(ctx, project.id, input.labelIds ?? [])
+  let parentId: string | null = null
+  if (input.parentRef) {
+    const parent = await getIssue(ctx, input.parentRef)
+    parentId = parent.issue.id
+    await assertParent(ctx, null, parentId)
+  }
+  const status = input.status ?? 'todo'
+  const last = await ctx.db.select({ s: sql<number>`max(${issues.sortOrder})` }).from(issues).where(and(eq(issues.projectId, project.id), eq(issues.status, status))).get()
+  const now = Date.now()
+  const id = newId()
+  // The counter bump and the insert share one atomic batch, so numbers never collide or get reused.
+  await ctx.db.batch([
+    ctx.db.update(projects).set({ issueSeq: sql`${projects.issueSeq} + 1` }).where(eq(projects.id, project.id)),
+    ctx.db.insert(issues).values({
+      id,
+      projectId: project.id,
+      number: sql`(select issue_seq from projects where id = ${project.id})` as unknown as number,
+      title: input.title,
+      description: input.description ?? '',
+      status,
+      priority: input.priority ?? 'none',
+      sortOrder: (last?.s ?? 0) + 1024,
+      parentId,
+      dueAt: input.dueAt ?? null,
+      createdBy: ctx.user.id,
+      createdAt: now,
+      updatedAt: now,
+      statusChangedAt: now,
+      completedAt: DONE.includes(status) ? now : null,
+    }),
+    ...assigneeIds.map((userId, position) => ctx.db.insert(issueAssignees).values({ issueId: id, userId, position })),
+    ...(input.labelIds ?? []).map((labelId) => ctx.db.insert(issueLabels).values({ issueId: id, labelId })),
+  ])
+  const issue = (await ctx.db.select().from(issues).where(eq(issues.id, id)).get())!
+  const ref = refOf(project, issue)
+  await activity(ctx, { entityType: 'issue', entityId: id, action: 'created', data: { ref, title: issue.title, status }, projectId: project.id }).run()
+  notify(ctx, assigneeIds, { type: 'issue_assigned', entityType: 'issue', entityId: id, data: { ref, title: issue.title } })
+  await syncReferences(ctx, 'issue', id, input.description ?? '')
+  return { ...issue, ref }
+}
+
+export type IssuePatch = Partial<Omit<IssueInput, 'parentRef'>> & { parentRef?: string | null; sortOrder?: number }
+
+/** Applies a patch with optimistic locking; every changed field becomes a `{field, from, to}` activity. */
+export async function updateIssue(ctx: Ctx, ref: string, version: number, patch: IssuePatch) {
+  requireScope(ctx, 'write')
+  const { issue, project, role } = await getIssue(ctx, ref)
+  need(role, 'member')
+  requireActive(project)
+  if (issue.version !== version) throw conflict()
+  const now = Date.now()
+  const set: Partial<Issue> = { updatedAt: now, version: issue.version + 1 }
+  const changes: { field: string; from: unknown; to: unknown }[] = []
+  for (const k of ['title', 'description', 'priority', 'dueAt', 'sortOrder'] as const) {
+    if (patch[k] !== undefined && patch[k] !== issue[k]) {
+      ;(set as Record<string, unknown>)[k] = patch[k]
+      if (k !== 'sortOrder' && k !== 'description') changes.push({ field: k, from: issue[k], to: patch[k] })
+      if (k === 'description') changes.push({ field: k, from: null, to: null })
+    }
+  }
+  if (patch.status && patch.status !== issue.status) {
+    set.status = patch.status
+    set.statusChangedAt = now
+    set.completedAt = DONE.includes(patch.status) ? now : null
+    changes.push({ field: 'status', from: issue.status, to: patch.status })
+  }
+  if (patch.parentRef !== undefined) {
+    const parentId = patch.parentRef ? (await getIssue(ctx, patch.parentRef)).issue.id : null
+    if (parentId) await assertParent(ctx, issue.id, parentId)
+    if (parentId !== issue.parentId) {
+      set.parentId = parentId
+      changes.push({ field: 'parent', from: issue.parentId, to: parentId })
+    }
+  }
+  const ops = []
+  let newAssignees: string[] = []
+  if (patch.assigneeIds) {
+    const before = (await ctx.db.select().from(issueAssignees).where(eq(issueAssignees.issueId, issue.id)).orderBy(asc(issueAssignees.position)).all()).map((a) => a.userId)
+    const after = [...new Set(patch.assigneeIds)]
+    if (before.join() !== after.join()) {
+      await assertAssignable(ctx, project.id, after.filter((x) => !before.includes(x)))
+      ops.push(ctx.db.delete(issueAssignees).where(eq(issueAssignees.issueId, issue.id)), ...after.map((userId, position) => ctx.db.insert(issueAssignees).values({ issueId: issue.id, userId, position })))
+      changes.push({ field: 'assignees', from: before, to: after })
+      newAssignees = after.filter((x) => !before.includes(x))
+    }
+  }
+  if (patch.labelIds) {
+    const before = (await ctx.db.select().from(issueLabels).where(eq(issueLabels.issueId, issue.id)).all()).map((l) => l.labelId).sort()
+    const after = [...new Set(patch.labelIds)].sort()
+    if (before.join() !== after.join()) {
+      await assertLabels(ctx, project.id, after)
+      ops.push(ctx.db.delete(issueLabels).where(eq(issueLabels.issueId, issue.id)), ...after.map((labelId) => ctx.db.insert(issueLabels).values({ issueId: issue.id, labelId })))
+      changes.push({ field: 'labels', from: before, to: after })
+    }
+  }
+  const res = await ctx.db.batch([
+    ctx.db.update(issues).set(set).where(and(eq(issues.id, issue.id), eq(issues.version, version))),
+    ...ops,
+    ...changes.map((c) => activity(ctx, { entityType: 'issue', entityId: issue.id, action: 'changed', data: { ref, ...c }, projectId: project.id }, now)),
+  ])
+  if (res[0].meta.changes === 0) throw conflict()
+  const watchers = await ctx.db.select({ userId: issueAssignees.userId }).from(issueAssignees).where(eq(issueAssignees.issueId, issue.id)).all()
+  if (newAssignees.length) notify(ctx, newAssignees, { type: 'issue_assigned', entityType: 'issue', entityId: issue.id, data: { ref, title: set.title ?? issue.title } })
+  if (set.status) notify(ctx, [issue.createdBy, ...watchers.map((w) => w.userId)], { type: 'issue_status', entityType: 'issue', entityId: issue.id, data: { ref, title: issue.title, to: set.status } })
+  if (patch.description !== undefined) await syncReferences(ctx, 'issue', issue.id, patch.description)
+  return { ...issue, ...set, ref }
+}
+
+/** Board move: new status and/or position between two neighbours (midpoint, one row written). */
+export async function moveIssue(ctx: Ctx, ref: string, version: number, o: { status?: Status; beforeRef?: string | null; afterRef?: string | null }) {
+  const order = async (r?: string | null) => (r ? (await getIssue(ctx, r)).issue.sortOrder : null)
+  const [before, after] = await Promise.all([order(o.beforeRef), order(o.afterRef)])
+  const sortOrder = before !== null && after !== null ? (before + after) / 2 : before !== null ? before + 1024 : after !== null ? after - 1024 : undefined
+  return updateIssue(ctx, ref, version, { status: o.status, sortOrder })
+}
+
+/** Applies one patch to 1–50 issues; each succeeds or fails on its own (version per item). */
+export async function batchUpdate(ctx: Ctx, items: { ref: string; version: number }[], patch: IssuePatch) {
+  const results: { ref: string; ok: boolean; code?: string; version?: number }[] = []
+  for (const it of items) {
+    try {
+      const r = await updateIssue(ctx, it.ref, it.version, patch)
+      results.push({ ref: it.ref, ok: true, version: r.version })
+    } catch (err) {
+      results.push({ ref: it.ref, ok: false, code: err instanceof AppError ? err.code : 'internal' })
+    }
+  }
+  return results
+}
+
+export async function deleteIssue(ctx: Ctx, ref: string) {
+  requireScope(ctx, 'write')
+  const { issue, project, role } = await getIssue(ctx, ref)
+  need(role, 'member')
+  await ctx.db.batch([
+    ctx.db.update(issues).set({ deletedAt: Date.now(), version: issue.version + 1 }).where(eq(issues.id, issue.id)),
+    activity(ctx, { entityType: 'issue', entityId: issue.id, action: 'deleted', data: { ref, title: issue.title }, projectId: project.id }),
+  ])
+}
+
+/** Ticks/unticks the n-th `- [ ]` in the description, refusing if the line no longer matches what the user saw. */
+export async function toggleCheckbox(ctx: Ctx, ref: string, version: number, index: number, expectLine: string, checked: boolean) {
+  const { issue } = await getIssue(ctx, ref)
+  const lines = issue.description.split('\n')
+  let n = -1
+  const at = lines.findIndex((l) => /^\s*[-*] \[[ xX]\]/.test(l) && ++n === index)
+  if (at < 0 || lines[at]!.replace(/\[[ xX]\]/, '[ ]').trim() !== expectLine.replace(/\[[ xX]\]/, '[ ]').trim()) throw conflict('Checklist changed')
+  lines[at] = lines[at]!.replace(/\[[ xX]\]/, checked ? '[x]' : '[ ]')
+  return updateIssue(ctx, ref, version, { description: lines.join('\n') })
+}
+
+// ---------- relations ----------
+
+export async function addRelation(ctx: Ctx, ref: string, type: 'blocks' | 'blocked_by' | 'relates' | 'duplicate_of', targetRef: string) {
+  requireScope(ctx, 'write')
+  const a = await getIssue(ctx, ref)
+  need(a.role, 'member')
+  const b = await getIssue(ctx, targetRef)
+  if (a.issue.id === b.issue.id) throw badRequest('Cannot relate an issue to itself')
+  const [fromId, toId, t] = type === 'blocked_by' ? [b.issue.id, a.issue.id, 'blocks' as const] : [a.issue.id, b.issue.id, type]
+  await ctx.db.batch([
+    ctx.db.insert(issueRelations).values({ fromId, toId, type: t, createdAt: Date.now() }).onConflictDoNothing(),
+    activity(ctx, { entityType: 'issue', entityId: a.issue.id, action: 'related', data: { ref, type, target: targetRef }, projectId: a.project.id }),
+  ])
+}
+
+export async function removeRelation(ctx: Ctx, ref: string, type: 'blocks' | 'blocked_by' | 'relates' | 'duplicate_of' | 'duplicated_by', targetRef: string) {
+  requireScope(ctx, 'write')
+  const a = await getIssue(ctx, ref)
+  need(a.role, 'member')
+  const b = await getIssue(ctx, targetRef)
+  const pairs =
+    type === 'blocked_by' ? [[b.issue.id, a.issue.id, 'blocks']] : type === 'duplicated_by' ? [[b.issue.id, a.issue.id, 'duplicate_of']] : type === 'relates' ? [[a.issue.id, b.issue.id, 'relates'], [b.issue.id, a.issue.id, 'relates']] : [[a.issue.id, b.issue.id, type]]
+  for (const [f, t, ty] of pairs)
+    await ctx.db.delete(issueRelations).where(and(eq(issueRelations.fromId, f!), eq(issueRelations.toId, t!), eq(issueRelations.type, ty as 'blocks')))
+}
+
+// ---------- comments & timeline ----------
+
+export async function timeline(ctx: Ctx, ref: string, o: { kind: 'all' | 'comments' | 'changes'; order: 'asc' | 'desc'; before?: number; limit: number }) {
+  const { issue } = await getIssue(ctx, ref)
+  const cmp = o.order === 'desc' ? lt : gt
+  const comments =
+    o.kind === 'changes'
+      ? []
+      : await ctx.db
+          .select()
+          .from(issueComments)
+          .where(and(eq(issueComments.issueId, issue.id), o.before ? cmp(issueComments.createdAt, o.before) : undefined))
+          .orderBy(o.order === 'desc' ? desc(issueComments.createdAt) : asc(issueComments.createdAt))
+          .limit(o.limit)
+          .all()
+  const changes =
+    o.kind === 'comments'
+      ? []
+      : await ctx.db
+          .select()
+          .from(activities)
+          .where(and(eq(activities.entityType, 'issue'), eq(activities.entityId, issue.id), o.before ? cmp(activities.createdAt, o.before) : undefined))
+          .orderBy(o.order === 'desc' ? desc(activities.createdAt) : asc(activities.createdAt))
+          .limit(o.limit)
+          .all()
+  const items = [
+    ...comments.map((c) => ({ kind: 'comment' as const, at: c.createdAt, comment: c.deletedAt ? { ...c, body: '' } : c })),
+    ...changes.map((a) => ({ kind: 'change' as const, at: a.createdAt, change: a })),
+  ].sort((x, y) => (o.order === 'desc' ? y.at - x.at : x.at - y.at))
+  const page = items.slice(0, o.limit)
+  return { items: page, next: items.length > o.limit || comments.length === o.limit || changes.length === o.limit ? (page[page.length - 1]?.at ?? null) : null }
+}
+
+export async function addIssueComment(ctx: Ctx, ref: string, body: string, parentId?: string) {
+  requireScope(ctx, 'write')
+  const { issue, project, role } = await getIssue(ctx, ref)
+  need(role, 'member')
+  if (parentId) {
+    const p = await ctx.db.select().from(issueComments).where(and(eq(issueComments.id, parentId), eq(issueComments.issueId, issue.id))).get()
+    if (!p || p.parentId) throw badRequest('Replies are one level deep')
+  }
+  const mentioned = mentionedUserIds(body)
+  for (const id of mentioned) if (!(await userCanSee(ctx, project.id, id))) throw new AppError('not_visible', 422, 'Mentioned user cannot see this project')
+  const c = { id: newId(), issueId: issue.id, parentId: parentId ?? null, authorId: ctx.user.id, body, createdAt: Date.now(), editedAt: null, deletedAt: null, version: 1 }
+  await ctx.db.batch([
+    ctx.db.insert(issueComments).values(c),
+    ctx.db.update(issues).set({ updatedAt: c.createdAt }).where(eq(issues.id, issue.id)),
+  ])
+  const ref2 = refOf(project, issue)
+  const watchers = (await ctx.db.select({ userId: issueAssignees.userId }).from(issueAssignees).where(eq(issueAssignees.issueId, issue.id)).all()).map((w) => w.userId)
+  notify(ctx, [issue.createdBy, ...watchers], { type: 'issue_comment', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id } })
+  notify(ctx, mentioned, { type: 'mention', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id } })
+  await syncReferences(ctx, 'issue_comment', c.id, body)
+  return c
+}
+
+export async function editIssueComment(ctx: Ctx, ref: string, id: string, version: number, body: string) {
+  requireScope(ctx, 'write')
+  const { issue } = await getIssue(ctx, ref)
+  const c = await ctx.db.select().from(issueComments).where(and(eq(issueComments.id, id), eq(issueComments.issueId, issue.id), isNull(issueComments.deletedAt))).get()
+  if (!c || c.authorId !== ctx.user.id) throw notFound()
+  const res = await ctx.db
+    .update(issueComments)
+    .set({ body, editedAt: Date.now(), version: c.version + 1 })
+    .where(and(eq(issueComments.id, id), eq(issueComments.version, version)))
+  if (res.meta.changes === 0) throw conflict()
+  await syncReferences(ctx, 'issue_comment', id, body)
+  return { ...c, body, version: c.version + 1 }
+}
+
+export async function deleteIssueComment(ctx: Ctx, ref: string, id: string) {
+  requireScope(ctx, 'write')
+  const { issue } = await getIssue(ctx, ref)
+  const c = await ctx.db.select().from(issueComments).where(and(eq(issueComments.id, id), eq(issueComments.issueId, issue.id))).get()
+  if (!c || c.authorId !== ctx.user.id) throw notFound()
+  await ctx.db.update(issueComments).set({ deletedAt: Date.now() }).where(eq(issueComments.id, id))
+}
+
+// ---------- #[issue:KEY-N] / #[task:id] back-references ----------
+
+/** Records which issues/tasks a body references (for "mentioned in" on the target). Never throws. */
+export async function syncReferences(ctx: Ctx, sourceType: 'note' | 'issue_comment' | 'issue', sourceId: string, body: string) {
+  try {
+    const targets: { type: 'issue' | 'task'; id: string }[] = []
+    for (const m of body.matchAll(/#\[(issue|task):([\w-]+)\]/g)) {
+      if (m[1] === 'task') targets.push({ type: 'task', id: m[2]! })
+      else {
+        const found = await getIssue(ctx, m[2]!).catch(() => null)
+        if (found) targets.push({ type: 'issue', id: found.issue.id })
+      }
+    }
+    await ctx.db.delete(references).where(and(eq(references.sourceType, sourceType), eq(references.sourceId, sourceId)))
+    for (const t of targets)
+      await ctx.db.insert(references).values({ sourceType, sourceId, targetType: t.type, targetId: t.id, createdAt: Date.now() }).onConflictDoNothing()
+  } catch {
+    /* side effect only */
+  }
+}
+
+export type { Access }
+
+// Attachments on issues follow the project: members upload, anyone who sees the issue reads.
+parentChecks.issue = async (ctx, id, mode) => {
+  const row = await ctx.db.select({ projectId: issues.projectId, deletedAt: issues.deletedAt }).from(issues).where(eq(issues.id, id)).get()
+  if (!row || row.deletedAt) throw notFound()
+  const { role } = await access(ctx, { id: row.projectId })
+  if (mode === 'write') need(role, 'member')
+}

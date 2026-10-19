@@ -69,7 +69,7 @@ export function FilesPanel({ parentType, parentId, canUpload = true }: { parentT
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-y-auto px-4 pt-3 pb-6" onDragOver={(e) => (e.preventDefault(), setOver(true))} onDragLeave={() => setOver(false)} onDrop={onDrop}>
+    <div className="flex h-full flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4" onDragOver={(e) => (e.preventDefault(), setOver(true))} onDragLeave={() => setOver(false)} onDrop={onDrop}>
       {canUpload && (
         <div
           className={cx(
@@ -144,7 +144,7 @@ export function FilesPanel({ parentType, parentId, canUpload = true }: { parentT
           })}
         </AnimatePresence>
       </ul>
-      {!pending.length && list.data?.length === 0 && <EmptyState icon={<Paperclip />} title={t('files.empty')} />}
+      {!canUpload && !pending.length && list.data?.length === 0 && <EmptyState icon={<Paperclip />} title={t('files.empty')} />}
       {preview && <FilePreviewDialog file={preview} onClose={() => setPreview(null)} />}
     </div>
   )

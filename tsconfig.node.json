@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
-  "compilerOptions": { "lib": ["ES2023"], "types": ["node"], "tsBuildInfoFile": "./node_modules/.tmp/node.tsbuildinfo" },
+  "compilerOptions": { "lib": ["ES2023", "DOM"], "types": ["node"], "tsBuildInfoFile": "./node_modules/.tmp/node.tsbuildinfo" },
   "include": ["vite.config.ts", "vitest.config.ts", "drizzle.config.ts", "playwright.config.ts", "e2e", "scripts"]
 }

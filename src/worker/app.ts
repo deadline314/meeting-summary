@@ -14,6 +14,7 @@ import { homeRoutes } from './routes/home'
 import { meRoutes } from './routes/me'
 import { noteRoutes, noteSocket } from './routes/notes'
 import { graderRoutes, taskRoutes } from './routes/tasks'
+import { projectRoutes } from './routes/projects'
 import { sweepStuckJobs } from './services/grader'
 import { SESSION_COOKIE, SESSION_TTL_MS, resolveSession } from './services/auth'
 
@@ -82,6 +83,7 @@ app.route('/api', homeRoutes)
 app.route('/api', noteRoutes)
 app.route('/api', fileRoutes)
 app.route('/api', taskRoutes)
+app.route('/api', projectRoutes)
 app.route('/api/grader', graderRoutes)
 app.route('/files', rawFileRoute)
 app.get('/ws/doc/:id', noteSocket)

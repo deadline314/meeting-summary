@@ -2,6 +2,9 @@ import { createRoute, type AnyRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { NotePage } from '../features/notes/note-page'
 import { NotesPage } from '../features/notes/notes-page'
+import { IssuePage } from '../features/projects/issue-page'
+import { MyIssuesPage, ProjectPage } from '../features/projects/project-page'
+import { ProjectsLayout } from '../features/projects/projects-layout'
 import { TaskPage } from '../features/tasks/task-page'
 import { TasksPage } from '../features/tasks/tasks-page'
 
@@ -64,5 +67,45 @@ export function appRoutes(parent: AnyRoute) {
     },
   })
 
-  return [notes, note, tasks, task]
+  const pmSearch = z.object({
+    view: z.enum(['list', 'board']).optional(),
+    assigneeId: z.string().optional(),
+    priority: z.string().optional(),
+    labelId: z.string().optional(),
+    q: z.string().optional(),
+    sort: z.string().optional(),
+    settings: z.enum(['general', 'members', 'labels', 'lifecycle']).optional(),
+  })
+  const projects = createRoute({ getParentRoute: () => parent, path: '/projects', component: ProjectsLayout })
+  const mine = createRoute({
+    getParentRoute: () => projects,
+    path: '/',
+    validateSearch: pmSearch,
+    component: function Mine() {
+      const search = mine.useSearch()
+      const navigate = mine.useNavigate()
+      return <MyIssuesPage search={search} setSearch={(s) => navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...s }), replace: true })} />
+    },
+  })
+  const project = createRoute({
+    getParentRoute: () => projects,
+    path: '$key',
+    validateSearch: pmSearch,
+    component: function Project() {
+      const { key } = project.useParams()
+      const search = project.useSearch()
+      const navigate = project.useNavigate()
+      return <ProjectPage key={key} projectKey={key.toUpperCase()} search={search} setSearch={(s) => navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...s }), replace: true })} />
+    },
+  })
+  const issue = createRoute({
+    getParentRoute: () => projects,
+    path: '$key/$ref',
+    component: function Issue() {
+      const { key, ref } = issue.useParams()
+      return <IssuePage key={ref} projectKey={key.toUpperCase()} issueRef={ref.toUpperCase()} />
+    },
+  })
+
+  return [notes, note, tasks, task, projects.addChildren([mine, project, issue])]
 }
