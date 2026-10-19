@@ -222,7 +222,8 @@ export const tasks = sqliteTable('tasks', {
   version: integer('version').notNull().default(1),
 })
 
-export type ResultDetail = { name: string; passed: boolean; message?: string }
+/** One check in a grading result; `row` (1-based data row), `column` and `level` locate it in a table (MS-55). */
+export type ResultDetail = { name: string; passed: boolean; message?: string; row?: number; column?: string; level?: 'error' | 'warning' }
 
 export const submissions = sqliteTable(
   'submissions',

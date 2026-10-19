@@ -42,8 +42,10 @@ export type Submission = {
   status: 'queued' | 'running' | 'passed' | 'failed' | 'error' | 'timeout'
   score: number | null
   message: string | null
-  details: { name: string; passed: boolean; message?: string }[] | null
+  details: { name: string; passed: boolean; message?: string; row?: number; column?: string; level?: 'error' | 'warning' }[] | null
   log: string | null
+  fileName?: string | null
+  fileSize?: number | null
   createdAt: number
   startedAt: number | null
   finishedAt: number | null

@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { Ctx } from '../context'
 import { isAdmin, requireScope } from '../context'
-import { submissions, tasks, users, type ResultDetail } from '../db/schema'
+import { files, submissions, tasks, users, type ResultDetail } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { AppError, conflict, notFound } from '../lib/errors'
 import { activity } from './activity'
@@ -230,7 +230,11 @@ export async function listSubmissions(ctx: Ctx, taskId: string, o: { all: boolea
     ctx.db.select().from(submissions).where(where).orderBy(desc(submissions.createdAt)).limit(o.limit ?? 50).all(),
     ctx.db.select({ n: sql<number>`count(*)` }).from(submissions).where(where).get(),
   ])
-  return { task: t, items: rows, total: total?.n ?? 0 }
+  // File name and size, so the client can offer the data viewer for tables.
+  const ids = rows.map((r) => r.fileId).filter(Boolean)
+  const meta = ids.length ? await ctx.db.select({ id: files.id, name: files.name, size: files.size }).from(files).where(inArray(files.id, ids)).all() : []
+  const by = new Map(meta.map((m) => [m.id, m]))
+  return { task: t, items: rows.map((r) => ({ ...r, fileName: by.get(r.fileId)?.name ?? null, fileSize: by.get(r.fileId)?.size ?? null })), total: total?.n ?? 0 }
 }
 
 export async function leaderboard(ctx: Ctx, taskId: string, page: { offset: number; limit: number } = { offset: 0, limit: 50 }) {
@@ -281,7 +285,7 @@ export async function recordResult(ctx: Pick<Ctx, 'db' | 'env' | 'waitUntil'>, s
   await ctx.db.batch([
     ctx.db
       .update(submissions)
-      .set({ status: r.status, score: r.score, message: r.message?.slice(0, 2000) ?? null, details: r.details?.slice(0, 200) ?? null, log: r.log?.slice(-20_000) ?? null, finishedAt: now })
+      .set({ status: r.status, score: r.score, message: r.message?.slice(0, 2000) ?? null, details: r.details?.slice(0, 500) ?? null, log: r.log?.slice(-20_000) ?? null, finishedAt: now })
       .where(eq(submissions.id, submissionId)),
     ...(s.isTrial && r.status === 'passed' ? [ctx.db.update(tasks).set({ trialPassedAt: now }).where(eq(tasks.id, s.taskId))] : []),
   ])

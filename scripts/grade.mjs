@@ -139,7 +139,15 @@ async function grade(job) {
     result.score = typeof parsed.score === 'number' && Number.isFinite(parsed.score) ? parsed.score : null
     result.message = typeof parsed.message === 'string' ? parsed.message : parsed.passed ? null : '@grader.failedNoMessage'
     result.details = Array.isArray(parsed.details)
-      ? parsed.details.slice(0, 500).map((d) => ({ name: String(d?.name ?? ''), passed: !!d?.passed, message: d?.message ? String(d.message) : undefined }))
+      ? parsed.details.slice(0, 500).map((d) => ({
+          name: String(d?.name ?? '').slice(0, 200),
+          passed: !!d?.passed,
+          message: d?.message ? String(d.message).slice(0, 1000) : undefined,
+          // Optional location in a table submission (row: 1-based data row).
+          row: Number.isInteger(d?.row) && d.row > 0 ? d.row : undefined,
+          column: typeof d?.column === 'string' ? d.column.slice(0, 200) : undefined,
+          level: d?.level === 'error' || d?.level === 'warning' ? d.level : undefined,
+        }))
       : null
     return result
   } finally {

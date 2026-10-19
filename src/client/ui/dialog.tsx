@@ -13,7 +13,8 @@ type DialogProps = {
   description?: ReactNode
   children?: ReactNode
   footer?: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'full'
+  /** `screen`: nearly the whole window (tables, previews). */
+  size?: 'sm' | 'md' | 'lg' | 'full' | 'screen'
   /** Return false to keep the dialog open (e.g. unsaved draft prompt). */
   onRequestClose?: () => boolean
 }
@@ -25,7 +26,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
   const guard = (e: Event) => {
     if (onRequestClose && !onRequestClose()) e.preventDefault()
   }
-  const width = { sm: 'md:max-w-sm', md: 'md:max-w-lg', lg: 'md:max-w-3xl', full: 'md:max-w-5xl' }[size]
+  const width = { sm: 'md:max-w-sm', md: 'md:max-w-lg', lg: 'md:max-w-3xl', full: 'md:max-w-5xl', screen: 'md:max-w-[min(96vw,1600px)]' }[size]
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
@@ -44,8 +45,8 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
           className={cx(
             'fixed z-50 flex flex-col bg-surface shadow-card focus:outline-none',
             mobile
-              ? cx('anim-sheet inset-x-0 bottom-0 max-h-[92dvh] rounded-t-3xl pb-safe', size === 'full' && 'top-0 max-h-none rounded-none pt-safe')
-              : cx('anim-pop top-[12vh] left-1/2 max-h-[76vh] w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl border border-line', width),
+              ? cx('anim-sheet inset-x-0 bottom-0 max-h-[92dvh] rounded-t-3xl pb-safe', (size === 'full' || size === 'screen') && 'top-0 max-h-none rounded-none pt-safe')
+              : cx('anim-pop left-1/2 w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl border border-line', size === 'screen' ? 'top-[3vh] max-h-[94vh]' : 'top-[12vh] max-h-[76vh]', width),
           )}
         >
           {mobile && size !== 'full' && <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-line-strong" aria-hidden />}

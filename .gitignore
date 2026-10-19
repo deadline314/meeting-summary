@@ -6,3 +6,8 @@ dist/
 test-results/
 playwright-report/
 e2e/.auth/
+# Example task data: generated locally (make_data.py) or the teacher's own files; hidden test sets must not be public.
+examples/**/hidden/
+examples/**/*.csv
+examples/**/*.xlsx
+examples/**/bad/

@@ -7,13 +7,15 @@ import { fileUrl } from '../../lib/upload'
 import { Button } from '../../ui/button'
 import { Dialog } from '../../ui/dialog'
 import { Skeleton } from '../../ui/misc'
+import { DataViewer } from '../data/data-viewer'
+import { isTable } from '../data/parse'
 
 type F = { id: string; name: string; mime: string; kind: string }
 
-const CODE = /\.(py|js|ts|tsx|jsx|cpp|cc|c|h|hpp|java|go|rs|rb|sh|r|m|json|ya?ml|toml|sql|md|txt|csv|log)$/i
+const CODE = /\.(py|js|ts|tsx|jsx|cpp|cc|c|h|hpp|java|go|rs|rb|sh|r|m|json|ya?ml|toml|sql|md|txt|log)$/i
 
 export const isPreviewable = (f: F) =>
-  f.mime.startsWith('image/') || f.mime === 'application/pdf' || f.mime.startsWith('video/') || CODE.test(f.name) || f.name.endsWith('.ipynb')
+  f.mime.startsWith('image/') || f.mime === 'application/pdf' || f.mime.startsWith('video/') || CODE.test(f.name) || f.name.endsWith('.ipynb') || isTable(f.name)
 
 export function FilePreviewDialog({ file, onClose }: { file: F; onClose(): void }) {
   const { t } = useI18n()
@@ -39,6 +41,12 @@ function Body({ file }: { file: F }) {
   if (file.mime.startsWith('video/')) return <video src={fileUrl(file.id)} controls className="mx-auto max-h-[70vh] rounded-xl" />
   if (file.mime === 'application/pdf') return <iframe src={fileUrl(file.id)} title={file.name} className="h-[70vh] w-full rounded-xl border border-line" />
   if (file.name.endsWith('.ipynb')) return <Notebook id={file.id} />
+  if (isTable(file.name))
+    return (
+      <div className="flex h-[66vh] flex-col max-md:h-[74dvh]">
+        <DataViewer file={file} />
+      </div>
+    )
   return <Code id={file.id} name={file.name} />
 }
 

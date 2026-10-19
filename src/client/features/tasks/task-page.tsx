@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BarChart3, CalendarClock, ChevronDown, Code2, Download, FileUp, ListChecks, Settings2, Trophy, Upload, Users, XCircle, CheckCircle2, FileText } from 'lucide-react'
+import { AlertTriangle, BarChart3, CalendarClock, ChevronDown, Code2, Download, FileUp, ListChecks, Settings2, Table2, Trophy, Upload, Users, XCircle, CheckCircle2, FileText } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useRef, useState, type DragEvent } from 'react'
 import { api } from '../../lib/api'
@@ -15,6 +15,8 @@ import { cx } from '../../ui/cx'
 import { Badge, Card, EmptyState, Skeleton } from '../../ui/misc'
 import { Segmented, TabBar } from '../../ui/tabs'
 import { toast, toastError } from '../../ui/toast'
+import { DataViewerDialog, findingsOf } from '../data/data-viewer'
+import { isTable } from '../data/parse'
 import { Html } from '../notes/preview'
 import { pending, useResultMessage, useSubmissions, useTask, type Submission, type Task } from './model'
 import { SubmissionBadge } from './status'
@@ -239,6 +241,9 @@ export function SubmissionCard({ s, n, prev, defaultOpen, showUser }: { s: Submi
   const [toggled, setOpen] = useState<boolean | null>(null)
   const open = toggled ?? (!!defaultOpen && !pending(s))
   const delta = prev && s.score !== null && prev.score !== null ? s.score - prev.score : null
+  // undefined = closed; a number = open at that row; null = open at the top.
+  const [viewing, setViewing] = useState<number | null | undefined>(undefined)
+  const table = !!s.fileId && !!s.fileName && isTable(s.fileName)
   return (
     <Card className={cx('overflow-hidden transition-colors', pending(s) && 'border-info')}>
       <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
@@ -258,19 +263,11 @@ export function SubmissionCard({ s, n, prev, defaultOpen, showUser }: { s: Submi
           <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
             <div className="flex flex-col gap-3 border-t border-line px-4 py-3 text-sm">
               {s.message && <div className={cx('rounded-xl px-3 py-2', s.status === 'passed' ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger')}>{msg(s.message)}</div>}
-              {!!s.details?.length && (
-                <div>
-                  <div className="mb-1.5 text-xs font-medium text-fg-3">{t('tasks.details')}</div>
-                  <ul className="flex flex-col gap-1">
-                    {s.details.map((d, i) => (
-                      <li key={i} className="flex items-start gap-2 text-[13px]">
-                        {d.passed ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" /> : <XCircle className="mt-0.5 size-4 shrink-0 text-danger" />}
-                        <span className="font-mono">{d.name}</span>
-                        {d.message && <span className="text-fg-3">— {d.message}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              {!!s.details?.length && <Details details={s.details} onOpenRow={table ? (row) => setViewing(row) : undefined} />}
+              {table && (
+                <Button size="sm" variant="soft" icon={<Table2 className="size-3.5" />} className="self-start" onClick={() => setViewing(null)}>
+                  {t('data.view')}
+                </Button>
               )}
               {s.log && (
                 <details>
@@ -287,7 +284,60 @@ export function SubmissionCard({ s, n, prev, defaultOpen, showUser }: { s: Submi
           </motion.div>
         )}
       </AnimatePresence>
+      {viewing !== undefined && s.fileId && (
+        <DataViewerDialog file={{ id: s.fileId, name: s.fileName ?? '', size: s.fileSize ?? undefined }} findings={findingsOf(s.details)} focusRow={viewing ?? undefined} onClose={() => setViewing(undefined)} />
+      )}
     </Card>
+  )
+}
+
+/** Grader checks; errors and warnings that point at a row are grouped, counted and clickable. */
+function Details({ details, onOpenRow }: { details: NonNullable<Submission['details']>; onOpenRow?: (row: number) => void }) {
+  const { t } = useI18n()
+  const [all, setAll] = useState(false)
+  const level = (d: (typeof details)[number]) => d.level ?? (d.passed ? null : 'error')
+  const errors = details.filter((d) => level(d) === 'error').length
+  const warnings = details.filter((d) => level(d) === 'warning').length
+  // Problems first (errors, then warnings), then the checks that passed.
+  const rank = (d: (typeof details)[number]) => (level(d) === 'error' ? 0 : level(d) === 'warning' ? 1 : 2)
+  const sorted = [...details].sort((a, b) => rank(a) - rank(b))
+  const shown = all ? sorted : sorted.slice(0, 12)
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-fg-3">
+        {t('tasks.details')}
+        {errors > 0 && <Badge tone="danger">{t('data.errorsN', { n: errors })}</Badge>}
+        {warnings > 0 && <Badge tone="warning">{t('data.warningsN', { n: warnings })}</Badge>}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {shown.map((d, i) => {
+          const lv = level(d)
+          const where = d.row !== undefined ? [t('data.rowN', { n: d.row }), d.column].filter(Boolean).join(' · ') : null
+          return (
+            <li key={i} className="flex items-start gap-2 text-[13px]">
+              {lv === 'error' ? <XCircle className="mt-0.5 size-4 shrink-0 text-danger" /> : lv === 'warning' ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />}
+              <span className="min-w-0 flex-1">
+                {where &&
+                  (onOpenRow ? (
+                    <button type="button" onClick={() => onOpenRow(d.row!)} className="mr-1.5 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-accent-text hover:bg-accent-soft">
+                      {where}
+                    </button>
+                  ) : (
+                    <span className="mr-1.5 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-fg-3">{where}</span>
+                  ))}
+                <span className="font-mono">{d.name}</span>
+                {d.message && <span className="text-fg-3"> — {d.message}</span>}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      {sorted.length > 12 && (
+        <Button size="sm" variant="ghost" className="mt-1" onClick={() => setAll((v) => !v)}>
+          {all ? t('data.showLess') : t('data.showAllN', { n: sorted.length })}
+        </Button>
+      )}
+    </div>
   )
 }
 

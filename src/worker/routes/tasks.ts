@@ -103,7 +103,20 @@ const result = z.object({
   status: z.enum(['passed', 'failed', 'error', 'timeout']),
   score: z.number().finite().nullable().default(null),
   message: z.string().max(4000).nullable().default(null),
-  details: z.array(z.object({ name: z.string().max(200), passed: z.boolean(), message: z.string().max(1000).optional() })).max(500).nullable().default(null),
+  details: z
+    .array(
+      z.object({
+        name: z.string().max(200),
+        passed: z.boolean(),
+        message: z.string().max(1000).optional(),
+        row: z.number().int().positive().optional(),
+        column: z.string().max(200).optional(),
+        level: z.enum(['error', 'warning']).optional(),
+      }),
+    )
+    .max(500)
+    .nullable()
+    .default(null),
   log: z.string().max(100_000).nullable().default(null),
 })
 
