@@ -9,7 +9,7 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations, DEV_LOGIN: 'true', OWNER_EMAILS: 'teacher@example.com', GRADER_MODE: 'local' },
+          bindings: { TEST_MIGRATIONS: migrations, DEV_LOGIN: 'true', OWNER_EMAILS: 'teacher@example.com', GRADER_MODE: 'local', LOCAL_RUNNER_TOKEN: 'dev-runner-token' },
         },
       }),
     ],
