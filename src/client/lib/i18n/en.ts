@@ -921,4 +921,5 @@ export const en: Record<keyof typeof zh, string> = {
   'pm.scope.mine': "Assigned to me",
   'pm.scope.all': "All projects",
   'tasks.regradeConfirmEst': "All {n} submissions will be graded again (about {minutes} min of GitHub Actions), and the trial run must pass again.",
+  'dev.gallery': "Component sheet (development)",
 }

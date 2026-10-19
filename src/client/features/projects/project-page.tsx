@@ -274,7 +274,7 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
       <div className="flex flex-wrap items-center gap-3 px-4 pt-5 pb-3 md:px-6">
         <span className="flex h-9 min-w-12 items-center justify-center rounded-xl bg-accent-soft px-2 font-mono text-sm font-bold text-accent-text">{p.key}</span>
         <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-2 truncate text-lg font-bold tracking-tight md:text-xl">
+          <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight max-md:flex-wrap md:truncate md:text-xl">
             {p.name}
             <VisibilityBadge p={p} />
             {p.state !== 'active' && <Badge>{t(`settings.pm.state.${p.state}` as MsgKey)}</Badge>}

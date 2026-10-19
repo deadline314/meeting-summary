@@ -687,7 +687,7 @@ function PanelTab({ icon, label, badge, onClick, active }: { icon: ReactNode; la
         className={cx('relative flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] [&_svg]:size-4', active ? 'bg-accent-soft text-accent-text' : 'text-fg-3 hover:bg-surface-2')}
       >
         {icon}
-        {!!badge && <span className="min-w-4 rounded-full bg-warning px-1 text-[10px] font-bold text-white">{badge}</span>}
+        {!!badge && <span className="min-w-4 rounded-full bg-warning px-1 text-[10px] font-bold text-on-status">{badge}</span>}
       </button>
     </Tooltip>
   )
@@ -697,7 +697,7 @@ function FloatBtn({ icon, label, badge, onClick }: { icon: ReactNode; label: str
   return (
     <button aria-label={label} onClick={onClick} className="relative flex size-12 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-card active:scale-95 [&_svg]:size-5">
       {icon}
-      {!!badge && <span className="absolute -top-1 -right-1 min-w-5 rounded-full bg-warning px-1 text-center text-[11px] font-bold text-white">{badge}</span>}
+      {!!badge && <span className="absolute -top-1 -right-1 min-w-5 rounded-full bg-warning px-1 text-center text-[11px] font-bold text-on-status">{badge}</span>}
     </button>
   )
 }

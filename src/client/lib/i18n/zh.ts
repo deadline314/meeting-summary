@@ -920,4 +920,5 @@ export const zh = {
   'pm.scope.mine': "指派給我",
   'pm.scope.all': "所有專案",
   'tasks.regradeConfirmEst': "所有 {n} 份提交會重新評測（預估約 {minutes} 分鐘 GitHub Actions 時間），並需要重新試跑。",
+  'dev.gallery': "元件總覽（開發用）",
 } as const

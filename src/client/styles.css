@@ -47,6 +47,7 @@
   --color-info-soft: var(--t-info-soft);
   --color-highlight: var(--t-highlight);
   --color-white: var(--t-white);
+  --color-on-status: var(--t-on-status);
   --color-transparent: transparent;
   --color-current: currentColor;
 }
@@ -64,23 +65,25 @@
   --t-line-strong: oklch(0.82 0.012 var(--h));
   --t-fg: oklch(0.22 0.02 var(--h));
   --t-fg-2: oklch(0.38 0.018 var(--h));
-  --t-fg-3: oklch(0.5 0.015 var(--h));
-  --t-fg-4: oklch(0.62 0.012 var(--h));
+  --t-fg-3: oklch(0.47 0.015 var(--h));
+  --t-fg-4: oklch(0.535 0.012 var(--h));
   --t-accent: oklch(0.53 var(--c) var(--h));
   --t-accent-hover: oklch(0.47 var(--c) var(--h));
   --t-accent-fg: oklch(0.99 0 0);
   --t-accent-soft: oklch(0.95 calc(var(--c) * 0.25) var(--h));
   --t-accent-text: oklch(0.45 var(--c) var(--h));
-  --t-success: oklch(0.52 0.14 155);
+  --t-success: oklch(0.49 0.13 155);
   --t-success-soft: oklch(0.95 0.04 155);
-  --t-warning: oklch(0.6 0.15 60);
+  --t-warning: oklch(0.51 0.13 55);
   --t-warning-soft: oklch(0.96 0.045 75);
   --t-danger: oklch(0.55 0.2 25);
   --t-danger-soft: oklch(0.95 0.035 25);
-  --t-info: oklch(0.55 0.15 240);
+  --t-info: oklch(0.5 0.14 240);
   --t-info-soft: oklch(0.95 0.035 240);
   --t-highlight: oklch(0.92 0.12 95 / 0.55);
   --t-white: oklch(1 0 0);
+  /* text on solid danger/warning fills (buttons, unread badges) */
+  --t-on-status: oklch(1 0 0);
   --t-shadow: 0 1px 2px oklch(0.2 0.02 var(--h) / 0.06), 0 8px 24px -8px oklch(0.2 0.02 var(--h) / 0.12);
   /* label palette: 8 hues, bg/fg pairs */
   --t-label-1-bg: oklch(0.94 0.05 25);  --t-label-1-fg: oklch(0.45 0.16 25);
@@ -136,8 +139,8 @@
   --t-line-strong: oklch(0.38 0.018 var(--h));
   --t-fg: oklch(0.96 0.005 var(--h));
   --t-fg-2: oklch(0.82 0.01 var(--h));
-  --t-fg-3: oklch(0.7 0.012 var(--h));
-  --t-fg-4: oklch(0.58 0.012 var(--h));
+  --t-fg-3: oklch(0.74 0.012 var(--h));
+  --t-fg-4: oklch(0.645 0.012 var(--h));
   --t-accent: oklch(0.62 var(--c) var(--h));
   --t-accent-hover: oklch(0.68 var(--c) var(--h));
   --t-accent-fg: oklch(0.15 0.02 var(--h));
@@ -147,6 +150,7 @@
   --t-success-soft: oklch(0.3 0.06 155);
   --t-warning: oklch(0.78 0.14 70);
   --t-warning-soft: oklch(0.32 0.06 70);
+  --t-on-status: oklch(0.16 0.02 var(--h));
   --t-danger: oklch(0.7 0.17 25);
   --t-danger-soft: oklch(0.3 0.07 25);
   --t-info: oklch(0.72 0.12 240);
@@ -266,3 +270,13 @@
           mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11zM6 16h.01M10 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 .prose-md a.drive-card[data-kind]::after { content: attr(data-kind); font-size: 0.75em; color: var(--t-fg-4); white-space: nowrap; }
+
+/* Phones: context menus (long press) open as a bottom sheet instead of at the finger. */
+@media (max-width: 767px) {
+  [data-radix-popper-content-wrapper]:has(> [data-sheet]) {
+    inset: auto 8px calc(8px + env(safe-area-inset-bottom)) 8px !important;
+    transform: none !important;
+    min-width: 0 !important;
+  }
+  [data-sheet] { max-height: 70dvh; overflow-y: auto; }
+}

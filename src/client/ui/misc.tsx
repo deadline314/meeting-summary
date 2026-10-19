@@ -10,8 +10,9 @@ export function Kbd({ keys, inverted }: { keys: string; inverted?: boolean }) {
       .map((k) => (k === 'mod' ? (isMac ? '⌘' : 'Ctrl') : k === 'shift' ? '⇧' : k === 'enter' ? '↵' : k.length === 1 ? k.toUpperCase() : k))
       .join(isMac ? '' : '+'),
   )
+  // Touch screens have no keyboard shortcuts, so hints disappear there.
   return (
-    <span className="inline-flex gap-1">
+    <span className="inline-flex gap-1 [@media(hover:none)]:hidden">
       {parts.map((p, i) => (
         <kbd
           key={i}

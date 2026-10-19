@@ -8,6 +8,7 @@ import { meQuery } from '../lib/session'
 import { Button } from '../ui/button'
 import { EmptyState } from '../ui/misc'
 import { AdminPage } from '../features/admin/admin'
+import { ComponentGallery } from '../features/dev/gallery'
 import { LoginPage } from '../features/auth/login'
 import { WelcomePage } from '../features/auth/welcome'
 import { HomePage } from '../features/home/home'
@@ -61,6 +62,8 @@ export const appLayout = createRoute({
 })
 
 const homeRoute = createRoute({ getParentRoute: () => appLayout, path: '/', component: HomePage })
+// Development only: the component sheet is not part of production builds' routes.
+const galleryRoute = createRoute({ getParentRoute: () => appLayout, path: '/dev/ui', component: ComponentGallery })
 
 const settingsRoute = createRoute({
   getParentRoute: () => appLayout,
@@ -98,7 +101,7 @@ const adminRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   welcomeRoute,
-  appLayout.addChildren([homeRoute, settingsRoute, adminRoute, ...appRoutes(appLayout)]),
+  appLayout.addChildren([homeRoute, settingsRoute, adminRoute, ...(import.meta.env.DEV ? [galleryRoute] : []), ...appRoutes(appLayout)]),
 ])
 
 export function makeRouter(queryClient: QueryClient) {

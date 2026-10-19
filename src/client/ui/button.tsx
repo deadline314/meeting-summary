@@ -8,7 +8,7 @@ const VARIANT = {
   primary: 'bg-accent text-accent-fg hover:bg-accent-hover shadow-sm',
   secondary: 'border border-line bg-surface text-fg hover:bg-surface-2 hover:border-line-strong',
   ghost: 'text-fg-2 hover:bg-surface-2 hover:text-fg',
-  danger: 'bg-danger text-white hover:opacity-90',
+  danger: 'bg-danger text-on-status hover:opacity-90',
   soft: 'bg-accent-soft text-accent-text hover:brightness-95',
 } as const
 

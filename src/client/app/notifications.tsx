@@ -63,7 +63,7 @@ export function NotificationBell({ side = 'bottom' }: { side?: 'bottom' | 'right
           >
             <Bell />
             {unread > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-5 rounded-full bg-danger px-1.5 text-center text-[11px] font-bold text-white">{unread > 99 ? '99+' : unread}</span>
+              <span className="absolute -top-0.5 -right-0.5 min-w-5 rounded-full bg-danger px-1.5 text-center text-[11px] font-bold text-on-status">{unread > 99 ? '99+' : unread}</span>
             )}
           </button>
         </Popover.Trigger>

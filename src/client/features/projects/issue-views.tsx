@@ -565,7 +565,7 @@ function IssueContextMenu({ issue, children }: { issue: IssueRow; children: Reac
         <ChevronRight />
       </CM.SubTrigger>
       <CM.Portal>
-        <CM.SubContent data-layer className={panel}>
+        <CM.SubContent data-layer data-sheet collisionPadding={8} className={panel}>
           {opts.map((o) => (
             <CM.Item key={o.value} className={item} onSelect={() => apply(o.value)}>
               {o.icon}
@@ -581,7 +581,7 @@ function IssueContextMenu({ issue, children }: { issue: IssueRow; children: Reac
     <CM.Root>
       <CM.Trigger asChild>{children}</CM.Trigger>
       <CM.Portal>
-        <CM.Content data-layer className={panel}>
+        <CM.Content data-layer data-sheet collisionPadding={8} className={panel}>
           <CM.Label className="px-2.5 py-1.5 text-[11px] font-semibold text-fg-4">{multi ? t('pm.issues', { n: v.checked.size }) : issue.ref}</CM.Label>
           {editable && (
             <>
@@ -610,7 +610,7 @@ function IssueContextMenu({ issue, children }: { issue: IssueRow; children: Reac
                   <ChevronRight />
                 </CM.SubTrigger>
                 <CM.Portal>
-                  <CM.SubContent data-layer className={panel}>
+                  <CM.SubContent data-layer data-sheet collisionPadding={8} className={panel}>
                     {(['parent', 'blocks', 'blocked_by', 'relates', 'duplicate_of'] as const).map((k) => (
                       <CM.Item key={k} className={item} onSelect={() => openRelate({ issue, kind: k })}>
                         {t(k === 'parent' ? 'pm.rel.setParent' : (`pm.rel.${k}` as MsgKey))}…
