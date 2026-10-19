@@ -922,4 +922,7 @@ export const en: Record<keyof typeof zh, string> = {
   'pm.scope.all': "All projects",
   'tasks.regradeConfirmEst': "All {n} submissions will be graded again (about {minutes} min of GitHub Actions), and the trial run must pass again.",
   'dev.gallery': "Component sheet (development)",
+  'session.expired': "Signed out",
+  'session.expiredHint': "This page and what you are editing are still here. Sign in again in the small window and you will carry on.",
+  'session.signIn': "Sign in again",
 }

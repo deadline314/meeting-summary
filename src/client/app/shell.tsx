@@ -18,6 +18,7 @@ import { useQuery } from '@tanstack/react-query'
 import { SITE_ICONS } from '../features/admin/site-settings'
 import { AnnotateHost } from '../features/files/annotate'
 import { TourHost } from './tour'
+import { SessionExpiredHost } from './session-expired'
 import { api } from '../lib/api'
 import { useOnline } from '../lib/hooks'
 import { useT, type MsgKey } from '../lib/i18n'
@@ -78,6 +79,7 @@ export function AppShell() {
       <CommandPalette />
       <AnnotateHost />
       <TourHost />
+      <SessionExpiredHost />
       <ShortcutHelp />
       {/* Desktop sidebar */}
       <motion.aside

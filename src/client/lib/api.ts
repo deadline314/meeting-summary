@@ -17,6 +17,10 @@ type Opts = { method?: string; body?: unknown; signal?: AbortSignal; raw?: BodyI
 
 const RETRYABLE = new Set([502, 503, 504])
 
+// The session ran out while the app was open (not the initial "am I signed in?" probe).
+const expiredListeners = new Set<() => void>()
+export const onSessionExpired = (fn: () => void) => void expiredListeners.add(fn)
+
 /** JSON fetch with unified errors. Idempotent requests retry with backoff on network/5xx gateway failures. */
 export async function api<T>(path: string, o: Opts = {}): Promise<T> {
   const method = o.method ?? 'GET'
@@ -52,6 +56,7 @@ export async function api<T>(path: string, o: Opts = {}): Promise<T> {
       /* not json */
     }
     const e = body?.error
+    if (res.status === 401 && path !== '/api/me' && !path.startsWith('/auth/')) expiredListeners.forEach((l) => l())
     throw new ApiError(res.status, e?.code ?? 'internal', e?.message ?? res.statusText, e?.requestId, e?.params)
   }
 }

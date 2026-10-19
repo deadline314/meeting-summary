@@ -192,4 +192,27 @@ describe('meeting notes', () => {
     expect(hits.map((h) => h.id)).toEqual([note.id])
     ca.ws.close()
   })
+  it('ten editors on a 20,000-character note: every keystroke reaches everyone quickly', async () => {
+    const people = await Promise.all(Array.from({ length: 10 }, (_, i) => login(uniq(`ten${i}`))))
+    const ids = await Promise.all(people.map(async (p) => (await p.call<{ user: { id: string } }>('/api/me')).body.user.id))
+    const { note } = (await people[0]!.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'Big', startsAt: Date.now(), attendeeIds: ids } })).body
+    const clients: Awaited<ReturnType<typeof connect>>[] = []
+    for (const p of people) clients.push(await connect(p.cookie, note.id))
+    clients[0]!.text.insert(0, 'x'.repeat(20_000))
+    await sleep(400)
+    expect(clients.every((c) => c.text.length >= 20_000)).toBe(true)
+    // Each person types one character; time until all ten copies agree.
+    const lags: number[] = []
+    for (let i = 0; i < clients.length; i++) {
+      const before = Date.now()
+      clients[i]!.text.insert(0, String(i))
+      const target: number = clients[i]!.text.length
+      while (!clients.every((c) => c.text.length === target) && Date.now() - before < 2000) await sleep(5)
+      lags.push(Date.now() - before)
+    }
+    expect(clients.every((c) => c.text.toString() === clients[0]!.text.toString())).toBe(true)
+    // Generous for a shared CI box; locally this is ~10–40 ms.
+    expect(Math.max(...lags)).toBeLessThan(500)
+    clients.forEach((c) => c.ws.close())
+  })
 })

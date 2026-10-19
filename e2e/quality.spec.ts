@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { isMobile, login, shot } from './helpers'
+import { email, isMobile, login, shot } from './helpers'
 
 const NAMES: Record<string, string> = { 'desktop-light': 'Quinn A', 'desktop-dark': 'Quinn B', 'mobile-light': 'Quinn C', 'mobile-dark': 'Quinn D' }
 
@@ -73,4 +73,58 @@ test('shortcut labels follow the platform; phones get long-press menus instead',
   const m = (await page.getByRole('menu').boundingBox())!
   expect(m.x + m.width).toBeLessThanOrEqual(390)
   await shot(page, info, 'MS-9', 'long-press')
+})
+
+test('typing in a 20,000-character note stays under 50 ms from key to screen', async ({ page }, info) => {
+  test.skip(isMobile(info), 'keyboard latency is measured on desktop')
+  await login(page, `qa-lat-${info.project.name}`, NAMES[info.project.name]!)
+  const note = (await (await page.request.post('/api/notes', { data: { title: 'Latency', startsAt: Date.now() } })).json()).note
+  await page.goto(`/notes/${note.id}?mode=edit`)
+  await page.locator('.cm-content').click()
+  await page.keyboard.insertText(('實驗紀錄 lorem ipsum 0123456789 '.repeat(20) + '\n').repeat(35))
+  await page.waitForTimeout(500)
+  // Time from each real keydown to the editor's DOM reflecting it, for 30 keys.
+  await page.evaluate(() => {
+    const el = document.querySelector('.cm-content') as HTMLElement
+    const w = window as unknown as { __lags: number[]; __t0: number | null }
+    w.__lags = []
+    w.__t0 = null
+    el.addEventListener('keydown', () => (w.__t0 = performance.now()), true)
+    new MutationObserver(() => {
+      if (w.__t0 === null) return
+      w.__lags.push(performance.now() - w.__t0)
+      w.__t0 = null
+    }).observe(el, { childList: true, subtree: true, characterData: true })
+  })
+  await page.keyboard.type('abcdefghijklmnopqrstuvwxyz0123', { delay: 40 })
+  const lags = (await page.evaluate(() => (window as unknown as { __lags: number[] }).__lags)).sort((x, y) => x - y)
+  expect(lags.length).toBeGreaterThanOrEqual(25)
+  const p95 = lags[Math.floor(lags.length * 0.95)]!
+  expect(p95).toBeLessThan(50)
+})
+
+test('session runs out mid-comment: sign in again in a small window, the text is still there', async ({ page }, info) => {
+  const who = `qa-exp-${info.project.name}`
+  await login(page, who, NAMES[info.project.name]!)
+  const key = `QX${info.project.name.startsWith('desk') ? 'D' : 'M'}${info.project.name.endsWith('light') ? 'L' : 'K'}`
+  await page.request.post('/api/projects', { data: { key, name: 'Expiry' } })
+  await page.request.post(`/api/projects/${key}/issues`, { data: { title: '寫到一半' } })
+  await page.goto(`/projects/${key}/${key}-1`)
+  const box = page.getByPlaceholder(/留言…/)
+  await box.fill('這段留言還沒送出')
+  // The session ends elsewhere (expired or signed out on another device).
+  await page.request.post('/auth/logout')
+  await page.getByRole('button', { name: '送出' }).click()
+  await expect(page.getByRole('dialog', { name: '登入已過期' })).toBeVisible()
+  await shot(page, info, 'MS-6', 'expired')
+  const popupP = page.waitForEvent('popup')
+  await page.getByRole('button', { name: '重新登入' }).click()
+  const popup = await popupP
+  await popup.getByLabel('Email').fill(email(who))
+  await popup.getByRole('button', { name: '登入' }).click()
+  await popup.waitForEvent('close')
+  await expect(page.getByRole('dialog', { name: '登入已過期' })).toHaveCount(0)
+  await expect(box).toHaveValue('這段留言還沒送出')
+  await page.getByRole('button', { name: '送出' }).click()
+  await expect(page.getByText('這段留言還沒送出').first()).toBeVisible()
 })

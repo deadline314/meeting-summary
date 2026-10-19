@@ -9,6 +9,7 @@ import { Button } from '../ui/button'
 import { EmptyState } from '../ui/misc'
 import { AdminPage } from '../features/admin/admin'
 import { ComponentGallery } from '../features/dev/gallery'
+import { SignedInPage } from './session-expired'
 import { LoginPage } from '../features/auth/login'
 import { WelcomePage } from '../features/auth/welcome'
 import { HomePage } from '../features/home/home'
@@ -35,6 +36,8 @@ const loginRoute = createRoute({
     return <LoginPage search={loginRoute.useSearch()} />
   },
 })
+
+const signedInRoute = createRoute({ getParentRoute: () => rootRoute, path: '/signed-in', component: SignedInPage })
 
 const welcomeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -101,6 +104,7 @@ const adminRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   welcomeRoute,
+  signedInRoute,
   appLayout.addChildren([homeRoute, settingsRoute, adminRoute, ...(import.meta.env.DEV ? [galleryRoute] : []), ...appRoutes(appLayout)]),
 ])
 

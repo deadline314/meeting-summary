@@ -921,4 +921,7 @@ export const zh = {
   'pm.scope.all': "所有專案",
   'tasks.regradeConfirmEst': "所有 {n} 份提交會重新評測（預估約 {minutes} 分鐘 GitHub Actions 時間），並需要重新試跑。",
   'dev.gallery': "元件總覽（開發用）",
+  'session.expired': "登入已過期",
+  'session.expiredHint': "這個頁面和你正在編輯的內容都還在。在小視窗重新登入後就會自動繼續。",
+  'session.signIn': "重新登入",
 } as const
