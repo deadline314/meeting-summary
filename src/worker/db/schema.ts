@@ -107,6 +107,7 @@ export const files = sqliteTable(
     parentType: text('parent_type', { enum: ['note', 'issue', 'task', 'task_asset', 'submission', 'avatar'] }).notNull(),
     parentId: text('parent_id').notNull(),
     driveUrl: text('drive_url'),
+    driveOwner: text('drive_owner'),
     status: text('status', { enum: ['pending', 'ready'] }).notNull().default('pending'),
     createdAt: ts('created_at').notNull(),
     deletedAt: ts('deleted_at'),

@@ -40,6 +40,7 @@ fileRoutes.post('/files/drive', async (c) => {
       name: z.string().min(1).max(200),
       mime: z.string().max(100).default('application/vnd.google-apps.file'),
       url: z.url().refine((u) => /^https:\/\/(drive|docs)\.google\.com\//.test(u), 'Must be a Google Drive link'),
+      owner: z.string().max(200).nullable().optional(),
     }),
   )
   return c.json({ file: await linkDriveFile(ctxOf(c), input) }, 201)

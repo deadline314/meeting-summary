@@ -12,9 +12,11 @@ import { confirm } from '../../ui/dialog'
 import { Input } from '../../ui/field'
 import { EmptyState } from '../../ui/misc'
 import { toastError } from '../../ui/toast'
+import { driveKind } from '../../lib/markdown'
+import { DrivePickerButton, linkDriveUrl, type DriveLinked } from './drive'
 import { FilePreviewDialog, isPreviewable } from './file-preview'
 
-export type FileRow = Uploaded & { ownerId: string; createdAt: number; driveUrl: string | null }
+export type FileRow = Uploaded & { ownerId: string; createdAt: number; driveUrl: string | null; driveOwner?: string | null }
 
 type Pending = { key: string; name: string; pct: number; abort: AbortController }
 
@@ -34,7 +36,7 @@ export function iconFor(f: { mime: string; kind: string; name: string }) {
 }
 
 /** Attachment list with drag-and-drop upload, per-file progress, Drive links and in-page preview. */
-export function FilesPanel({ parentType, parentId, canUpload = true }: { parentType: string; parentId: string; canUpload?: boolean }) {
+export function FilesPanel({ parentType, parentId, canUpload = true, onDriveLinked }: { parentType: string; parentId: string; canUpload?: boolean; onDriveLinked?(files: DriveLinked[]): void }) {
   const { t, fmt } = useI18n()
   const me = useMe()
   const qc = useQueryClient()
@@ -85,10 +87,11 @@ export function FilesPanel({ parentType, parentId, canUpload = true }: { parentT
             </button>
           </span>
           <input ref={input} type="file" multiple hidden onChange={(e) => (upload([...(e.target.files ?? [])]), (e.target.value = ''))} />
+          <DrivePickerButton parentType={parentType} parentId={parentId} onLinked={(f) => (refresh(), onDriveLinked?.(f))} />
           <Button size="sm" variant="ghost" icon={<Link2 className="size-3.5" />} onClick={() => setDrive((d) => !d)}>
             {t('files.linkDrive')}
           </Button>
-          <AnimatePresence>{drive && <DriveForm parentType={parentType} parentId={parentId} onDone={() => (setDrive(false), refresh())} />}</AnimatePresence>
+          <AnimatePresence>{drive && <DriveForm parentType={parentType} parentId={parentId} onDone={(f) => (setDrive(false), refresh(), onDriveLinked?.([f]))} />}</AnimatePresence>
         </div>
       )}
       <ul className="flex flex-col gap-1.5">
@@ -120,7 +123,7 @@ export function FilesPanel({ parentType, parentId, canUpload = true }: { parentT
                 )}
                 <button className="min-w-0 flex-1 text-left" onClick={() => (f.kind === 'drive' ? window.open(f.driveUrl!, '_blank', 'noopener') : isPreviewable(f) ? setPreview(f) : (location.href = `${fileUrl(f.id)}?download=1`))}>
                   <div className="truncate text-sm font-medium hover:text-accent-text">{f.name}</div>
-                  <div className="text-xs text-fg-4">{f.kind === 'drive' ? 'Google Drive' : `${fmt.bytes(f.size)} · ${fmt.relative(f.createdAt)}`}</div>
+                  <div className="truncate text-xs text-fg-4">{f.kind === 'drive' ? [driveKind(f.driveUrl ?? '') === f.name ? 'Google Drive' : driveKind(f.driveUrl ?? ''), f.driveOwner].filter(Boolean).join(' · ') : `${fmt.bytes(f.size)} · ${fmt.relative(f.createdAt)}`}</div>
                 </button>
                 {f.kind === 'drive' ? (
                   <IconButton label={t('files.preview')} icon={<ExternalLink />} size="sm" onClick={() => window.open(f.driveUrl!, '_blank', 'noopener')} />
@@ -150,7 +153,7 @@ export function FilesPanel({ parentType, parentId, canUpload = true }: { parentT
   )
 }
 
-function DriveForm({ parentType, parentId, onDone }: { parentType: string; parentId: string; onDone(): void }) {
+function DriveForm({ parentType, parentId, onDone }: { parentType: string; parentId: string; onDone(f: DriveLinked): void }) {
   const { t } = useI18n()
   const [url, setUrl] = useState('')
   const [name, setName] = useState('')
@@ -165,8 +168,7 @@ function DriveForm({ parentType, parentId, onDone }: { parentType: string; paren
         e.preventDefault()
         setBusy(true)
         try {
-          await api('/api/files/drive', { method: 'POST', body: { parentType, parentId, url, name: name || driveName(url) } })
-          onDone()
+          onDone(await linkDriveUrl({ parentType, parentId }, url, name))
         } catch (err) {
           toastError(err)
         } finally {
@@ -183,7 +185,4 @@ function DriveForm({ parentType, parentId, onDone }: { parentType: string; paren
   )
 }
 
-export function driveName(url: string) {
-  const kind = /\/document\//.test(url) ? 'Google Docs' : /\/spreadsheets\//.test(url) ? 'Google Sheets' : /\/presentation\//.test(url) ? 'Google Slides' : 'Google Drive'
-  return kind
-}
+export const driveName = driveKind

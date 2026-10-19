@@ -8,6 +8,7 @@ import { tags } from '@lezer/highlight'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import * as Y from 'yjs'
+import { driveKind } from '../../lib/markdown'
 import { api } from '../../lib/api'
 import type { DirectoryUser } from '@shared/types'
 
@@ -30,6 +31,8 @@ type Props = {
   comments: { id: string; from: number; to: number; active: boolean }[]
   onSelection(sel: { from: number; to: number } | null): void
   onFiles(files: File[], at: number): void
+  /** A lone Google Drive URL was pasted (it is inserted as a card link). */
+  onDriveUrl?(url: string): void
 }
 
 const setMarks = StateEffect.define<DecorationSet>()
@@ -128,6 +131,15 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(p, ref) {
       EditorView.domEventHandlers({
         paste(e, v) {
           const files = [...(e.clipboardData?.files ?? [])]
+          const text = e.clipboardData?.getData('text/plain').trim() ?? ''
+          if (!files.length && /^https:\/\/(drive|docs)\.google\.com\/\S+$/.test(text)) {
+            e.preventDefault()
+            const s = v.state.selection.main
+            const insert = `[${driveKind(text)}](${text})`
+            v.dispatch({ changes: { from: s.from, to: s.to, insert }, selection: { anchor: s.from + insert.length } })
+            props.current.onDriveUrl?.(text)
+            return true
+          }
           if (!files.length) return false
           e.preventDefault()
           props.current.onFiles(files, v.state.selection.main.head)

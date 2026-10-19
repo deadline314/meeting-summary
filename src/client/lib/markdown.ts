@@ -14,13 +14,24 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A') {
     node.setAttribute('target', '_blank')
     node.setAttribute('rel', 'noopener noreferrer')
+    const href = node.getAttribute('href') ?? ''
+    if (/^https:\/\/(drive|docs)\.google\.com\//.test(href)) {
+      node.setAttribute('class', 'drive-card')
+      // The product name is shown next to the link text, unless the text already is that name.
+      if (node.textContent?.trim() !== driveKind(href)) node.setAttribute('data-kind', driveKind(href))
+    }
   }
   if (node.tagName === 'INPUT') node.setAttribute('disabled', '')
 })
 
+/** Product name for a Drive URL (shown on cards and as the default link text). */
+export function driveKind(url: string) {
+  return /\/document\//.test(url) ? 'Google Docs' : /\/spreadsheets\//.test(url) ? 'Google Sheets' : /\/presentation\//.test(url) ? 'Google Slides' : /\/forms\//.test(url) ? 'Google Forms' : 'Google Drive'
+}
+
 export function renderMarkdown(md: string) {
   return DOMPurify.sanitize(withRefs(marked.parse(md, { async: false }) as string), {
-    ADD_ATTR: ['data-ref', 'data-id', 'data-c', 'target'],
+    ADD_ATTR: ['data-ref', 'data-id', 'data-c', 'data-kind', 'target'],
   })
 }
 

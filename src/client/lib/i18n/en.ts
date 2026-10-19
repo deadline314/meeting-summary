@@ -847,4 +847,8 @@ export const en: Record<keyof typeof zh, string> = {
   'files.pasted': "Attachment uploaded",
   'actions.project': "Project",
   'change.referenced': "referenced this issue from",
+  'drive.pick': "Pick from Google Drive",
+  'drive.authTitle': "Google Drive access needed",
+  'drive.authHint': "Only the files you pick are shared with this site; their sharing settings never change.",
+  'drive.connect': "Connect Drive",
 }

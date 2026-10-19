@@ -76,6 +76,7 @@ export async function uploadFile(
     parentType: o.parentType,
     parentId: o.parentId,
     driveUrl: null,
+    driveOwner: null,
     status: 'ready',
     createdAt: Date.now(),
     deletedAt: null,
@@ -89,7 +90,7 @@ export async function uploadFile(
   return row
 }
 
-export async function linkDriveFile(ctx: Ctx, o: { parentType: ParentType; parentId: string; name: string; mime: string; url: string }) {
+export async function linkDriveFile(ctx: Ctx, o: { parentType: ParentType; parentId: string; name: string; mime: string; url: string; owner?: string | null }) {
   requireScope(ctx, 'write')
   await assertParent(ctx, o.parentType, o.parentId, 'write')
   const row: FileRow = {
@@ -103,6 +104,7 @@ export async function linkDriveFile(ctx: Ctx, o: { parentType: ParentType; paren
     parentType: o.parentType,
     parentId: o.parentId,
     driveUrl: o.url,
+    driveOwner: o.owner ?? null,
     status: 'ready',
     createdAt: Date.now(),
     deletedAt: null,

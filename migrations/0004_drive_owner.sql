@@ -1,0 +1,1 @@
+ALTER TABLE `files` ADD `drive_owner` text;

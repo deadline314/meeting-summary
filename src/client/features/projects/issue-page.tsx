@@ -22,6 +22,7 @@ import { compressImage, fileUrl, uploadFile } from '../../lib/upload'
 import { confirm } from '../../ui/dialog'
 import { Composer } from '../notes/comments'
 import { annotateImage } from '../files/annotate'
+import { DrivePickerButton } from '../files/drive'
 import { Html } from '../notes/preview'
 import { markEntityRead, useUnreadIssues } from '../../app/notifications'
 import { openDuplicate } from './duplicate-issue'
@@ -374,6 +375,7 @@ function IssueBody({ d, editable }: { d: Detail; editable: boolean }) {
         <div className="flex items-center gap-1">
           <IconButton label={t('files.upload')} icon={<Paperclip />} size="sm" onClick={() => input.current?.click()} />
           <IconButton label={t('files.linkDrive')} icon={<HardDrive />} size="sm" onClick={() => setDrive((v) => !v)} />
+          <DrivePickerButton parentType="issue" parentId={i.id} onLinked={refreshFiles} />
           <input ref={input} type="file" multiple hidden onChange={(e) => (upload([...(e.target.files ?? [])]), (e.target.value = ''))} />
         </div>
       )}

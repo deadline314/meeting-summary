@@ -42,6 +42,16 @@ npm run dev
 
 到 Google Cloud Console → APIs & Services → Credentials 建立 OAuth Client（Web application），授權的重新導向 URI 填 `https://<你的網域>/auth/google/callback`。只需要 `openid email profile`。
 
+### Google Drive 檔案選擇器（選用）
+
+沒有設定時，使用者仍可貼上 Drive 網址連結檔案。要開啟「從 Google Drive 選取」：
+
+1. 同一個 Cloud 專案啟用 **Google Picker API** 與 **Google Drive API**
+2. 建立一把 **API 金鑰**，應用程式限制選「HTTP 參照網址」填 `https://<你的網域>/*`，API 限制選 Google Picker API
+3. OAuth Client 的「已授權的 JavaScript 來源」加上 `https://<你的網域>`
+4. OAuth 同意畫面加入範圍 `https://www.googleapis.com/auth/drive.file`（只存取使用者選的檔案，不需 Google 審核）
+5. 設定：`npx wrangler secret put GOOGLE_PICKER_KEY`（API 金鑰）、`npx wrangler secret put GOOGLE_APP_ID`（Cloud 專案編號，在專案資訊頁）
+
 ### 評測（GitHub Actions）
 
 評測 workflow 在本 repo（公開 repo 的代管 runner 免費、分鐘數不限）。建立一個 fine-grained token，只給本 repo 的 **Actions: Read and write**，存成 Worker 秘密 `GITHUB_TOKEN`。詳見 [`design/02-architecture.md`](design/02-architecture.md) §6 與 [`.github/workflows/grade.yml`](.github/workflows/grade.yml)。

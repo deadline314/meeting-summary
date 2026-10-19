@@ -54,6 +54,7 @@ import { toast, toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
 import { FilesPanel } from '../files/files-panel'
 import { ActionItems } from './action-items'
+import { linkDriveUrl } from '../files/drive'
 import { authorRuns, b64ToAbs, relPosToB64, useAuthorsMap, useCollab, usePeers, useStatus, useText } from './collab'
 import { CommentsPanel, type Draft, type NoteComment, type Thread } from './comments'
 import { Editor, type EditorHandle, type FormatKind } from './editor'
@@ -339,7 +340,13 @@ function NoteView({ note, search, setSearch }: { note: NoteDto; search: NoteSear
     <div className="flex h-full min-h-0 flex-col">
       {tab === 'comments' && <CommentsPanel noteId={note.id} threads={threads} activeId={activeId} onActivate={setActiveId} draft={draft} onDraftDone={() => setDraft(null)} />}
       {tab === 'history' && <HistoryPanel noteId={note.id} onOpen={(v) => setSearch({ version: v })} />}
-      {tab === 'files' && <FilesPanel parentType="note" parentId={note.id} />}
+      {tab === 'files' && (
+        <FilesPanel
+          parentType="note"
+          parentId={note.id}
+          onDriveLinked={(list) => canEdit && collab.text.insert(collab.text.length, list.map((f) => `\n[${f.name}](${f.url})\n`).join(''))}
+        />
+      )}
       {tab === 'links' && (
         <div className="flex h-full flex-col overflow-y-auto">
           <ActionItems text={collab.text} source={source} canEdit={canEdit} projectId={note.projectId} />
@@ -366,6 +373,7 @@ function NoteView({ note, search, setSearch }: { note: NoteDto; search: NoteSear
                 <Editor
                   ref={editor}
                   text={collab.text}
+                  onDriveUrl={(url) => linkDriveUrl({ parentType: 'note', parentId: note.id }, url).catch(() => undefined)}
                   awareness={collab.provider.awareness}
                   readOnly={!canEdit}
                   placeholder={t('notes.emptyHint')}

@@ -8,6 +8,9 @@ GRADER_MODE=local
 # Optional: real Google OAuth (https://console.cloud.google.com/apis/credentials)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+# Optional: Google Drive picker (browser API key restricted to your site + Cloud project number)
+GOOGLE_PICKER_KEY=
+GOOGLE_APP_ID=
 # Optional: fine-grained token with actions:write on GITHUB_REPO, for GRADER_MODE=github
 GITHUB_TOKEN=
 

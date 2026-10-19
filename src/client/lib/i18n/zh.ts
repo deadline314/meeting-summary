@@ -846,4 +846,8 @@ export const zh = {
   'files.pasted': "已上傳附件",
   'actions.project': "建立在專案",
   'change.referenced': "在另一張票引用了這張：",
+  'drive.pick': "從 Google Drive 選取",
+  'drive.authTitle': "需要授權 Google Drive",
+  'drive.authHint': "只會存取你在選擇器裡挑的檔案，不會改變檔案權限。",
+  'drive.connect': "連結 Drive",
 } as const

@@ -251,3 +251,18 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Google Drive links in rendered Markdown become small file cards. */
+.prose-md a.drive-card {
+  display: inline-flex; align-items: center; gap: 0.45rem; max-width: 100%;
+  padding: 0.3rem 0.65rem 0.3rem 0.5rem; border: 1px solid var(--t-line); border-radius: 0.75rem;
+  background: var(--t-surface); color: var(--t-fg); text-decoration: none; vertical-align: middle;
+  transition: border-color 150ms;
+}
+.prose-md a.drive-card:hover { border-color: var(--t-accent); }
+.prose-md a.drive-card::before {
+  content: ''; flex: none; width: 1rem; height: 1rem; background: var(--t-accent-text);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11zM6 16h.01M10 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11zM6 16h.01M10 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.prose-md a.drive-card[data-kind]::after { content: attr(data-kind); font-size: 0.75em; color: var(--t-fg-4); white-space: nowrap; }
