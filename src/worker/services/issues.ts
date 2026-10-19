@@ -1,11 +1,11 @@
 import { and, asc, desc, eq, gt, inArray, isNull, like, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { Ctx } from '../context'
-import { requireScope } from '../context'
-import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, idempotency, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, notes, projects, references } from '../db/schema'
+import { isAdmin, requireScope } from '../context'
+import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, files, idempotency, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, notes, projects, references } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { AppError, badRequest, conflict, notFound } from '../lib/errors'
 import { activity } from './activity'
-import { parentChecks } from './files'
+import { limits, parentChecks, usedBytes } from './files'
 import { mentionedUserIds, notify } from './notify'
 import { access, need, requireActive, userCanSee, visibleProjectIds, type Access, type Project } from './projects'
 
@@ -371,6 +371,127 @@ export async function batchUpdate(ctx: Ctx, items: { ref: string; version: numbe
     }
   }
   return results
+}
+
+export type DuplicateOptions = { title: string; key: string; children: boolean; attachments: boolean; labels: boolean; assignees: boolean }
+const MAX_COPY = 200
+
+/**
+ * Copies an issue (optionally its whole sub-tree) into `key`. Numbers are reserved in one atomic
+ * batch, so the copied tree is numbered contiguously even while others create issues. Labels are
+ * matched by name across projects and assignees who can't see the target are dropped; both are
+ * reported back as `skipped`.
+ */
+export async function duplicateIssue(ctx: Ctx, ref: string, o: DuplicateOptions) {
+  requireScope(ctx, 'write')
+  const src = await getIssue(ctx, ref)
+  const { project: target, role } = await access(ctx, { key: o.key })
+  need(role, 'member')
+  requireActive(target)
+
+  // Breadth-first so every parent is inserted before its children.
+  const tree: Issue[] = [src.issue]
+  for (let i = 0; o.children && i < tree.length && tree.length < MAX_COPY; i++) {
+    const kids = await ctx.db.select().from(issues).where(and(eq(issues.parentId, tree[i]!.id), isNull(issues.deletedAt))).orderBy(asc(issues.sortOrder)).all()
+    tree.push(...kids.slice(0, MAX_COPY - tree.length))
+  }
+  const ids = tree.map((t) => t.id)
+  const newIds = new Map(ids.map((id) => [id, newId()]))
+
+  const skipped = { labels: new Set<string>(), assignees: new Set<string>() }
+  const labelsOf = new Map<string, string[]>()
+  if (o.labels) {
+    const rows = await ctx.db.select({ issueId: issueLabels.issueId, id: labels.id, name: labels.name }).from(issueLabels).innerJoin(labels, eq(labels.id, issueLabels.labelId)).where(inArray(issueLabels.issueId, ids)).all()
+    const byName = new Map(
+      (await ctx.db.select().from(labels).where(eq(labels.projectId, target.id)).all()).map((l) => [l.name.toLowerCase(), l.id]),
+    )
+    for (const r of rows) {
+      const id = src.project.id === target.id ? r.id : byName.get(r.name.toLowerCase())
+      if (id) labelsOf.set(r.issueId, [...(labelsOf.get(r.issueId) ?? []), id])
+      else skipped.labels.add(r.name)
+    }
+  }
+  const assigneesOf = new Map<string, string[]>()
+  if (o.assignees) {
+    const rows = await ctx.db.select().from(issueAssignees).where(inArray(issueAssignees.issueId, ids)).orderBy(asc(issueAssignees.position)).all()
+    const can = new Map<string, boolean>()
+    for (const r of rows) {
+      if (!can.has(r.userId)) can.set(r.userId, await userCanSee(ctx, target.id, r.userId))
+      if (can.get(r.userId)) assigneesOf.set(r.issueId, [...(assigneesOf.get(r.issueId) ?? []), r.userId])
+      else skipped.assignees.add(r.userId)
+    }
+  }
+
+  // Stored files are copied object-by-object before any row is written; a failure removes the copies.
+  const fileRows: (typeof files.$inferInsert)[] = []
+  const fileIds = new Map<string, string>()
+  if (o.attachments) {
+    const srcFiles = await ctx.db.select().from(files).where(and(eq(files.parentType, 'issue'), inArray(files.parentId, ids), isNull(files.deletedAt), eq(files.status, 'ready'))).all()
+    const lim = await limits(ctx)
+    const bytes = srcFiles.reduce((n, f) => n + f.size, 0)
+    if (!isAdmin(ctx.user) && (await usedBytes(ctx, ctx.user.id)) + bytes > lim.quotaBytes) throw new AppError('quota_exceeded', 413, 'Storage quota exceeded')
+    try {
+      for (const f of srcFiles) {
+        const id = newId()
+        const parentId = newIds.get(f.parentId)!
+        let r2Key = ''
+        if (f.kind !== 'drive') {
+          const obj = await ctx.env.FILES.get(f.r2Key)
+          if (!obj) continue
+          r2Key = `issue/${parentId}/${id}`
+          await ctx.env.FILES.put(r2Key, obj.body, { httpMetadata: obj.httpMetadata, customMetadata: { name: f.name, owner: ctx.user.id } })
+        }
+        fileIds.set(f.id, id)
+        fileRows.push({ ...f, id, r2Key, parentId, ownerId: ctx.user.id, createdAt: Date.now() })
+      }
+    } catch (err) {
+      ctx.waitUntil(Promise.all(fileRows.filter((f) => f.r2Key).map((f) => ctx.env.FILES.delete(f.r2Key))).catch(() => undefined))
+      throw err
+    }
+  }
+  // Inline images in descriptions point at the copies, not the originals.
+  const rewrite = (text: string) => [...fileIds].reduce((s, [from, to]) => s.replaceAll(from, to), text)
+
+  const last = await ctx.db.select({ s: sql<number>`max(${issues.sortOrder})` }).from(issues).where(and(eq(issues.projectId, target.id), eq(issues.status, 'todo'))).get()
+  const now = Date.now()
+  const n = tree.length
+  const srcRef = (i: Issue) => `${src.project.key}-${i.number}`
+  await ctx.db.batch([
+    ctx.db.update(projects).set({ issueSeq: sql`${projects.issueSeq} + ${n}` }).where(eq(projects.id, target.id)),
+    ...tree.map((t, i) =>
+      ctx.db.insert(issues).values({
+        id: newIds.get(t.id)!,
+        projectId: target.id,
+        number: sql`(select issue_seq from projects where id = ${target.id}) - ${n - 1 - i}` as unknown as number,
+        title: i === 0 ? o.title : t.title,
+        description: rewrite(t.description),
+        status: 'todo',
+        priority: t.priority,
+        sortOrder: (last?.s ?? 0) + 1024 * (i + 1),
+        parentId: i === 0 ? null : newIds.get(t.parentId!)!,
+        dueAt: t.dueAt,
+        createdBy: ctx.user.id,
+        createdAt: now,
+        updatedAt: now,
+        statusChangedAt: now,
+        completedAt: null,
+      }),
+    ),
+    ...tree.flatMap((t) => (assigneesOf.get(t.id) ?? []).map((userId, position) => ctx.db.insert(issueAssignees).values({ issueId: newIds.get(t.id)!, userId, position }))),
+    ...tree.flatMap((t) => [...new Set(labelsOf.get(t.id) ?? [])].map((labelId) => ctx.db.insert(issueLabels).values({ issueId: newIds.get(t.id)!, labelId }))),
+    ...fileRows.map((f) => ctx.db.insert(files).values(f)),
+  ])
+  const created = await ctx.db.select().from(issues).where(inArray(issues.id, [...newIds.values()])).all()
+  const byId = new Map(created.map((c) => [c.id, c]))
+  for (const t of tree) {
+    const c = byId.get(newIds.get(t.id)!)!
+    const r = refOf(target, c)
+    await activity(ctx, { entityType: 'issue', entityId: c.id, action: 'created', data: { ref: r, title: c.title, status: c.status, copiedFrom: srcRef(t) }, projectId: target.id }).run()
+    notify(ctx, assigneesOf.get(t.id) ?? [], { type: 'issue_assigned', entityType: 'issue', entityId: c.id, data: { ref: r, title: c.title } })
+    if (c.description) await syncReferences(ctx, 'issue', c.id, c.description)
+  }
+  const root = byId.get(newIds.get(src.issue.id)!)!
+  return { ref: refOf(target, root), count: n, skipped: { labels: [...skipped.labels], assignees: [...skipped.assignees] } }
 }
 
 export async function deleteIssue(ctx: Ctx, ref: string) {

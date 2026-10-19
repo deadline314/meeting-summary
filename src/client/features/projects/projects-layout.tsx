@@ -12,6 +12,7 @@ import { Skeleton } from '../../ui/misc'
 import { toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
 import { CreateIssueHost, openCreateIssue } from './create-issue'
+import { DuplicateIssueHost } from './duplicate-issue'
 import { useProjects, type ProjectRow } from './model'
 
 export function ProjectsLayout() {
@@ -26,6 +27,7 @@ export function ProjectsLayout() {
         <Outlet />
       </div>
       <CreateIssueHost />
+      <DuplicateIssueHost />
       {creating && <NewProjectDialog onClose={() => setCreating(false)} />}
     </div>
   )

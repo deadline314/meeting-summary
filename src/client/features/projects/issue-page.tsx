@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { AlarmClock, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, Download, FileText, FolderKanban, HardDrive, Link2, Paperclip, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { AlarmClock, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, Paperclip, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
@@ -22,6 +22,7 @@ import { compressImage, fileUrl, uploadFile } from '../../lib/upload'
 import { confirm } from '../../ui/dialog'
 import { Composer } from '../notes/comments'
 import { Html } from '../notes/preview'
+import { openDuplicate } from './duplicate-issue'
 import { IssueStatusIcon, PriorityIcon } from './icons'
 import { canWrite, invalidateIssues, isDone, readNav, useLabels, useProject, type IssuePatch, type IssueRow, type Status } from './model'
 import { AssigneeIcon, LabelChip, LabelIcon, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
@@ -94,6 +95,7 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
         </Button>
         <span className="font-mono text-sm text-fg-4">{i.ref}</span>
         <div className="flex-1" />
+        {canWrite(i.role) && <IconButton label={t('dup.action')} icon={<CopyPlus />} size="sm" onClick={() => openDuplicate(i)} />}
         {idx >= 0 && nav && (
           <div className="flex items-center gap-1 text-xs text-fg-4">
             <IconButton label={t('pm.prev')} shortcut="[" icon={<ChevronLeft />} size="sm" disabled={idx === 0} onClick={() => go(-1)} />
@@ -693,6 +695,15 @@ function Timeline({ issueRef, editable }: { issueRef: string; editable: boolean 
               {it.change.actorId ? <UserAvatar id={it.change.actorId} size="xs" /> : <span className="size-5" />}
               <span>
                 <UserName id={it.change.actorId} className="font-medium text-fg-3" /> {describe(it.change)}
+                {typeof it.change.data.copiedFrom === 'string' && (
+                  <>
+                    {' · '}
+                    {t('change.copiedFrom')}{' '}
+                    <Link to={`/projects/${it.change.data.copiedFrom.split('-')[0]}/${it.change.data.copiedFrom}`} className="font-mono text-accent-text hover:underline">
+                      {it.change.data.copiedFrom}
+                    </Link>
+                  </>
+                )}
               </span>
               <span title={fmt.dateTime(it.at)}>· {fmt.relative(it.at)}</span>
               {it.change.source !== 'web' && <span className="rounded bg-surface-2 px-1 font-mono text-[10px]">{it.change.source}</span>}

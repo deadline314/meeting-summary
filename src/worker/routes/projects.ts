@@ -15,6 +15,7 @@ import {
   getIssue,
   idempotent,
   issueDetail,
+  duplicateIssue,
   listIssues,
   moveIssue,
   removeRelation,
@@ -166,6 +167,15 @@ projectRoutes.post('/projects/:key/issues', async (c) => {
 })
 
 projectRoutes.get('/issues/:ref', async (c) => c.json(await issueDetail(ctxOf(c), c.req.param('ref'))))
+
+projectRoutes.post('/issues/:ref/duplicate', async (c) => {
+  const ctx = ctxOf(c)
+  const { operationId, ...o } = await body(
+    c,
+    z.object({ title: issueFields.title, key: z.string().min(2).max(6), children: z.boolean(), attachments: z.boolean(), labels: z.boolean(), assignees: z.boolean(), operationId: opId }),
+  )
+  return c.json(await idempotent(ctx, operationId, () => duplicateIssue(ctx, c.req.param('ref'), o)), 201)
+})
 
 const patchFields = z.object({
   version: z.number().int(),

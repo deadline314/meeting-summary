@@ -1,3 +1,4 @@
+import { SELF } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { login, uniq } from './helpers'
 
@@ -108,5 +109,39 @@ describe('projects & issues', () => {
     expect((await a.call(`/api/projects/${k}`, { method: 'DELETE', body: { confirmKey: 'NOPE' } })).status).toBe(400)
     expect((await a.call(`/api/projects/${k}`, { method: 'DELETE', body: { confirmKey: k } })).status).toBe(200)
     expect((await a.call(`/api/projects/${k}`)).status).toBe(404)
+  })
+  it('duplicates a sub-tree with contiguous numbers, files and name-matched labels', async () => {
+    const { a, k } = await setup()
+    const k2 = key()
+    await a.call('/api/projects', { method: 'POST', body: { key: k2, name: 'Other' } })
+    const l1 = (await a.call<{ label: { id: string } }>(`/api/projects/${k}/labels`, { method: 'POST', body: { name: 'Bug', color: 1 } })).body.label
+    const l2 = (await a.call<{ label: { id: string } }>(`/api/projects/${k}/labels`, { method: 'POST', body: { name: 'OnlyHere', color: 2 } })).body.label
+    await a.call(`/api/projects/${k2}/labels`, { method: 'POST', body: { name: 'bug', color: 3 } })
+    const root = (await a.call<{ issue: Issue & { id: string } }>(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'root', labelIds: [l1.id, l2.id] } })).body.issue
+    for (const t of ['c1', 'c2', 'c3']) await a.call(`/api/projects/${k}/issues`, { method: 'POST', body: { title: t, parentRef: root.ref } })
+    const up = await SELF.fetch(`http://localhost/api/files?parentType=issue&parentId=${root.id}`, {
+      method: 'PUT',
+      headers: { cookie: a.cookie, 'x-file-name': 'a.txt', 'content-type': 'text/plain', 'content-length': '5' },
+      body: 'hello',
+    })
+    expect(up.status).toBe(201)
+    // Someone else creating at the same time must not split the copied numbers.
+    const [dup] = await Promise.all([
+      a.call<{ ref: string; count: number; skipped: { labels: string[] } }>(`/api/issues/${root.ref}/duplicate`, { method: 'POST', body: { title: 'copy', key: k2, children: true, attachments: true, labels: true, assignees: true } }),
+      a.call(`/api/projects/${k2}/issues`, { method: 'POST', body: { title: 'concurrent' } }),
+    ])
+    expect(dup.status).toBe(201)
+    expect(dup.body.count).toBe(4)
+    expect(dup.body.skipped.labels).toEqual(['OnlyHere'])
+    const d = (await a.call<{ issue: Issue & { id: string; title: string; labels: { name: string }[] }; children: { ref: string }[] }>(`/api/issues/${dup.body.ref}`)).body
+    expect(d.issue.title).toBe('copy')
+    expect(d.issue.labels.map((l) => l.name)).toEqual(['bug'])
+    const nums = [dup.body.ref, ...d.children.map((c) => c.ref)].map((r) => Number(r.split('-')[1])).sort((x, y) => x - y)
+    expect(nums[3]! - nums[0]!).toBe(3)
+    const fl = (await a.call<{ items: { id: string }[] }>(`/api/files?parentType=issue&parentId=${d.issue.id}`)).body.items
+    expect(fl).toHaveLength(1)
+    expect(await (await SELF.fetch(`http://localhost/files/${fl[0]!.id}`, { headers: { cookie: a.cookie } })).text()).toBe('hello')
+    const tl = (await a.call<{ items: { change?: { data: { copiedFrom?: string } } }[] }>(`/api/issues/${dup.body.ref}/timeline?kind=changes`)).body.items
+    expect(tl[0]!.change!.data.copiedFrom).toBe(root.ref)
   })
 })

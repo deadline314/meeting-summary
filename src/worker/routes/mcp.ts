@@ -6,7 +6,7 @@ import { ISSUE_PRIORITIES, ISSUE_STATUSES, users } from '../db/schema'
 import { AppError } from '../lib/errors'
 import { errorFields, log } from '../lib/log'
 import { authenticateKey } from '../services/api-keys'
-import { addIssueComment, batchUpdate, createIssue, getIssue, idempotent, issueDetail, listIssues, updateIssue } from '../services/issues'
+import { addIssueComment, batchUpdate, createIssue, duplicateIssue, getIssue, idempotent, issueDetail, listIssues, updateIssue } from '../services/issues'
 import { createNote, getNote, listNotes, noteMarkdown } from '../services/notes'
 import { access, addMember, createProject, listProjects, projectDto, setProjectState } from '../services/projects'
 import { directory } from '../services/users'
@@ -121,6 +121,12 @@ const TOOLS: Tool[] = [
     async (ctx, a) => idempotent(ctx, a.operationId, () => addIssueComment(ctx, a.ref, a.body)),
   ),
   tool(
+    'issue_duplicate',
+    'Copy an issue into a project (same or another). Optionally copies the whole sub-tree, attachments, labels (matched by name) and assignees (only those who can see the target).',
+    z.object({ ref: z.string(), key: z.string().describe('Target project key'), title: z.string().min(1).max(300).optional(), children: z.boolean().default(false), attachments: z.boolean().default(false), labels: z.boolean().default(true), assignees: z.boolean().default(false), operationId }),
+    async (ctx, { ref, operationId: op, title, ...o }) => idempotent(ctx, op, async () => duplicateIssue(ctx, ref, { ...o, title: title ?? (await getIssue(ctx, ref)).issue.title })),
+  ),
+  tool(
     'notes_list',
     'List meeting notes (newest first), optionally searching title and text.',
     z.object({ q: z.string().max(100).optional(), from: z.number().int().optional(), to: z.number().int().optional(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(20) }),
@@ -143,7 +149,7 @@ const TOOLS: Tool[] = [
   ),
 ]
 
-const WRITE_TOOLS = new Set(['project_create', 'project_member_add', 'project_close', 'issue_create', 'issue_update', 'issue_batch_update', 'issue_comment', 'note_create'])
+const WRITE_TOOLS = new Set(['project_create', 'project_member_add', 'project_close', 'issue_create', 'issue_update', 'issue_batch_update', 'issue_comment', 'issue_duplicate', 'note_create'])
 const MANAGE_TOOLS = new Set(['project_create', 'project_member_add', 'project_close'])
 
 type Rpc = { jsonrpc: '2.0'; id?: string | number | null; method: string; params?: Record<string, unknown> }

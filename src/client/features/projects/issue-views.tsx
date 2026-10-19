@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, Copy, GitBranch, Link2, Plus, Trash2, UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, CopyPlus, GitBranch, Link2, Plus, Trash2, UserPlus } from 'lucide-react'
 import { ContextMenu as CM } from 'radix-ui'
 import { AnimatePresence, motion } from 'motion/react'
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
@@ -16,6 +16,7 @@ import { Kbd, Skeleton } from '../../ui/misc'
 import { toast, toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
 import { openCreateIssue } from './create-issue'
+import { openDuplicate } from './duplicate-issue'
 import { IssueStatusIcon, PriorityIcon } from './icons'
 import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, rememberNav, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
 import { LabelChip, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
@@ -543,6 +544,11 @@ function IssueContextMenu({ issue, children }: { issue: IssueRow; children: Reac
           {!multi && editable && (
             <CM.Item className={item} onSelect={() => openCreateIssue({ projectKey: issue.projectKey, parentRef: issue.ref })}>
               <GitBranch /> {t('pm.rel.child')}
+            </CM.Item>
+          )}
+          {!multi && editable && (
+            <CM.Item className={item} onSelect={() => openDuplicate(issue)}>
+              <CopyPlus /> {t('dup.action')}
             </CM.Item>
           )}
           <CM.Item className={item} onSelect={() => copyRefs(rows(), false, t)}>
