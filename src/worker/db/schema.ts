@@ -16,7 +16,7 @@ export const users = sqliteTable(
     avatarUrl: text('avatar_url'),
     role: text('role', { enum: ['student', 'admin', 'owner'] }).notNull().default('student'),
     status: text('status', { enum: ['active', 'disabled', 'removed'] }).notNull().default('active'),
-    prefs: json<{ locale?: string; accent?: string; mode?: string }>('prefs').notNull().default({}),
+    prefs: json<{ locale?: string; accent?: string; mode?: string; notifyOff?: string[] }>('prefs').notNull().default({}),
     onboardedAt: ts('onboarded_at'),
     createdAt: ts('created_at').notNull(),
     lastSeenAt: ts('last_seen_at'),
@@ -399,3 +399,13 @@ export const usageDaily = sqliteTable('usage_daily', {
   day: text('day').primaryKey(),
   requests: integer('requests').notNull().default(0),
 })
+
+/** Who gets issue notifications. Creators and assignees are added automatically; anyone can opt in or out. */
+export const issueSubscriptions = sqliteTable(
+  'issue_subscriptions',
+  {
+    issueId: text('issue_id').notNull(),
+    userId: text('user_id').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.issueId, t.userId] }), index('issue_subscriptions_user').on(t.userId)],
+)

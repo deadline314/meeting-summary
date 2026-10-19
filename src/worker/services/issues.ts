@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, like, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { Ctx } from '../context'
 import { isAdmin, requireScope } from '../context'
-import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, files, idempotency, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, notes, projects, references } from '../db/schema'
+import { ISSUE_PRIORITIES, ISSUE_STATUSES, activities, files, idempotency, issueSubscriptions, issueAssignees, issueComments, issueLabels, issueRelations, issues, labels, notes, projects, references } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { AppError, badRequest, conflict, notFound } from '../lib/errors'
 import { activity } from './activity'
@@ -45,6 +45,22 @@ export async function getIssue(ctx: Ctx, ref: string) {
 }
 
 const refOf = (p: Pick<Project, 'key'>, i: Pick<Issue, 'number'>) => `${p.key}-${i.number}`
+
+// ---------- subscriptions ----------
+
+const subscribeOps = (ctx: Ctx, issueId: string, userIds: string[]) =>
+  [...new Set(userIds)].map((userId) => ctx.db.insert(issueSubscriptions).values({ issueId, userId }).onConflictDoNothing())
+
+async function subscribers(ctx: Ctx, issueId: string) {
+  return (await ctx.db.select({ userId: issueSubscriptions.userId }).from(issueSubscriptions).where(eq(issueSubscriptions.issueId, issueId)).all()).map((r) => r.userId)
+}
+
+export async function setSubscribed(ctx: Ctx, ref: string, on: boolean) {
+  const { issue } = await getIssue(ctx, ref)
+  if (on) await ctx.db.insert(issueSubscriptions).values({ issueId: issue.id, userId: ctx.user.id }).onConflictDoNothing()
+  else await ctx.db.delete(issueSubscriptions).where(and(eq(issueSubscriptions.issueId, issue.id), eq(issueSubscriptions.userId, ctx.user.id)))
+  return { subscribed: on }
+}
 
 // ---------- read models ----------
 
@@ -261,7 +277,9 @@ export async function issueDetail(ctx: Ctx, ref: string) {
   const mentionedIn = notesMentioning
     .filter((n) => n.visibility === 'site' || !n.projectId || visible.has(n.projectId))
     .map(({ id, title, startsAt }) => ({ id, title, startsAt }))
+  const sub = await ctx.db.select().from(issueSubscriptions).where(and(eq(issueSubscriptions.issueId, issue.id), eq(issueSubscriptions.userId, ctx.user.id))).get()
   return {
+    subscribed: !!sub,
     issue: { ...h!, role, projectState: project.state, projectName: project.name },
     relations,
     children: (await hydrate(ctx, children, new Map([[project.id, project.key]]))).map(({ ref, title, status, assigneeIds }) => ({ ref, title, status, assigneeIds })),
@@ -390,11 +408,12 @@ export async function createIssue(ctx: Ctx, key: string, input: IssueInput) {
     }),
     ...assigneeIds.map((userId, position) => ctx.db.insert(issueAssignees).values({ issueId: id, userId, position })),
     ...(input.labelIds ?? []).map((labelId) => ctx.db.insert(issueLabels).values({ issueId: id, labelId })),
+    ...subscribeOps(ctx, id, [ctx.user.id, ...assigneeIds]),
   ])
   const issue = (await ctx.db.select().from(issues).where(eq(issues.id, id)).get())!
   const ref = refOf(project, issue)
   await activity(ctx, { entityType: 'issue', entityId: id, action: 'created', data: { ref, title: issue.title, status }, projectId: project.id }).run()
-  notify(ctx, assigneeIds, { type: 'issue_assigned', entityType: 'issue', entityId: id, data: { ref, title: issue.title } })
+  notify(ctx, assigneeIds, { type: 'issue_assigned', entityType: 'issue', entityId: id, data: { ref, title: issue.title }, projectId: project.id })
   await syncReferences(ctx, 'issue', id, input.description ?? '')
   return { ...issue, ref }
 }
@@ -442,6 +461,7 @@ export async function updateIssue(ctx: Ctx, ref: string, version: number, patch:
       ops.push(ctx.db.delete(issueAssignees).where(eq(issueAssignees.issueId, issue.id)), ...after.map((userId, position) => ctx.db.insert(issueAssignees).values({ issueId: issue.id, userId, position })))
       changes.push({ field: 'assignees', from: before, to: after })
       newAssignees = after.filter((x) => !before.includes(x))
+      ops.push(...subscribeOps(ctx, issue.id, newAssignees))
     }
   }
   if (patch.labelIds) {
@@ -459,9 +479,8 @@ export async function updateIssue(ctx: Ctx, ref: string, version: number, patch:
     ...changes.map((c) => activity(ctx, { entityType: 'issue', entityId: issue.id, action: 'changed', data: { ref, ...c }, projectId: project.id }, now)),
   ])
   if (res[0].meta.changes === 0) throw conflict()
-  const watchers = await ctx.db.select({ userId: issueAssignees.userId }).from(issueAssignees).where(eq(issueAssignees.issueId, issue.id)).all()
-  if (newAssignees.length) notify(ctx, newAssignees, { type: 'issue_assigned', entityType: 'issue', entityId: issue.id, data: { ref, title: set.title ?? issue.title } })
-  if (set.status) notify(ctx, [issue.createdBy, ...watchers.map((w) => w.userId)], { type: 'issue_status', entityType: 'issue', entityId: issue.id, data: { ref, title: issue.title, to: set.status } })
+  if (newAssignees.length) notify(ctx, newAssignees, { type: 'issue_assigned', entityType: 'issue', entityId: issue.id, data: { ref, title: set.title ?? issue.title }, projectId: project.id })
+  if (set.status) notify(ctx, await subscribers(ctx, issue.id), { type: 'issue_status', entityType: 'issue', entityId: issue.id, data: { ref, title: issue.title, to: set.status }, projectId: project.id })
   if (patch.description !== undefined) await syncReferences(ctx, 'issue', issue.id, patch.description)
   return { ...issue, ...set, ref }
 }
@@ -595,6 +614,7 @@ export async function duplicateIssue(ctx: Ctx, ref: string, o: DuplicateOptions)
     ...tree.flatMap((t) => (assigneesOf.get(t.id) ?? []).map((userId, position) => ctx.db.insert(issueAssignees).values({ issueId: newIds.get(t.id)!, userId, position }))),
     ...tree.flatMap((t) => [...new Set(labelsOf.get(t.id) ?? [])].map((labelId) => ctx.db.insert(issueLabels).values({ issueId: newIds.get(t.id)!, labelId }))),
     ...fileRows.map((f) => ctx.db.insert(files).values(f)),
+    ...tree.flatMap((t) => subscribeOps(ctx, newIds.get(t.id)!, [ctx.user.id, ...(assigneesOf.get(t.id) ?? [])])),
   ])
   const created = await ctx.db.select().from(issues).where(inArray(issues.id, [...newIds.values()])).all()
   const byId = new Map(created.map((c) => [c.id, c]))
@@ -602,7 +622,7 @@ export async function duplicateIssue(ctx: Ctx, ref: string, o: DuplicateOptions)
     const c = byId.get(newIds.get(t.id)!)!
     const r = refOf(target, c)
     await activity(ctx, { entityType: 'issue', entityId: c.id, action: 'created', data: { ref: r, title: c.title, status: c.status, copiedFrom: srcRef(t) }, projectId: target.id }).run()
-    notify(ctx, assigneesOf.get(t.id) ?? [], { type: 'issue_assigned', entityType: 'issue', entityId: c.id, data: { ref: r, title: c.title } })
+    notify(ctx, assigneesOf.get(t.id) ?? [], { type: 'issue_assigned', entityType: 'issue', entityId: c.id, data: { ref: r, title: c.title }, projectId: target.id })
     if (c.description) await syncReferences(ctx, 'issue', c.id, c.description)
   }
   const root = byId.get(newIds.get(src.issue.id)!)!
@@ -703,11 +723,13 @@ export async function addIssueComment(ctx: Ctx, ref: string, body: string, paren
   await ctx.db.batch([
     ctx.db.insert(issueComments).values(c),
     ctx.db.update(issues).set({ updatedAt: c.createdAt }).where(eq(issues.id, issue.id)),
+    // Commenting subscribes you, as in Linear.
+    ...subscribeOps(ctx, issue.id, [ctx.user.id]),
   ])
   const ref2 = refOf(project, issue)
-  const watchers = (await ctx.db.select({ userId: issueAssignees.userId }).from(issueAssignees).where(eq(issueAssignees.issueId, issue.id)).all()).map((w) => w.userId)
-  notify(ctx, [issue.createdBy, ...watchers], { type: 'issue_comment', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id } })
-  notify(ctx, mentioned, { type: 'mention', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id } })
+  const subs = (await subscribers(ctx, issue.id)).filter((id) => !mentioned.includes(id))
+  notify(ctx, subs, { type: 'issue_comment', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id }, projectId: project.id })
+  notify(ctx, mentioned, { type: 'mention', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id }, projectId: project.id })
   await syncReferences(ctx, 'issue_comment', c.id, body)
   return c
 }

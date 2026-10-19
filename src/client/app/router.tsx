@@ -65,7 +65,7 @@ const homeRoute = createRoute({ getParentRoute: () => appLayout, path: '/', comp
 const settingsRoute = createRoute({
   getParentRoute: () => appLayout,
   path: '/settings',
-  validateSearch: z.object({ tab: z.enum(['profile', 'appearance', 'devices', 'api', 'admin']).catch('profile').default('profile') }),
+  validateSearch: z.object({ tab: z.enum(['profile', 'appearance', 'notifications', 'devices', 'api', 'admin']).catch('profile').default('profile') }),
   component: function Settings() {
     const { tab } = settingsRoute.useSearch()
     const navigate = settingsRoute.useNavigate()

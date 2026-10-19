@@ -15,7 +15,15 @@ import { Logo } from './shell'
 
 type Notice = { id: string; actorId: string | null; type: string; entityType: string; entityId: string; data: Record<string, string>; readAt: number | null; createdAt: number }
 
-const query = { queryKey: ['notifications'], queryFn: () => api<{ items: Notice[]; unread: number }>('/api/notifications'), refetchInterval: 30_000 }
+const query = { queryKey: ['notifications'], queryFn: () => api<{ items: Notice[]; unread: number; unreadIssues: string[] }>('/api/notifications'), refetchInterval: 30_000 }
+
+/** Ids of issues with unread notifications (for the dot in lists). */
+export function useUnreadIssues() {
+  return new Set(useQuery(query).data?.unreadIssues ?? [])
+}
+
+export const markEntityRead = (entityId: string) =>
+  api('/api/notifications/read', { method: 'POST', body: { entityId } }).then(() => queryClient.invalidateQueries({ queryKey: ['notifications'] }))
 
 function href(n: Notice) {
   if (n.entityType === 'issue' && n.data.ref) return `/projects/${n.data.ref.split('-')[0]}/${n.data.ref}`
@@ -35,7 +43,8 @@ export function NotificationBell({ side = 'bottom' }: { side?: 'bottom' | 'right
   const unread = q.data?.unread ?? 0
   const read = (ids?: string[]) => api('/api/notifications/read', { method: 'POST', body: { ids } }).then(() => queryClient.invalidateQueries({ queryKey: ['notifications'] }))
   const text = (n: Notice) =>
-    t(`notice.${n.type}` as MsgKey, {
+    t(Number(n.data.count) > 1 ? 'notice.merged' : (`notice.${n.type}` as MsgKey), {
+      n: String(n.data.count ?? ''),
       actor: n.actorId ? (dir.get(n.actorId)?.name ?? '') : t('app.name'),
       ref: n.data.ref ?? '',
       title: n.data.title ?? '',

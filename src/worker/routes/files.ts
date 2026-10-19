@@ -22,7 +22,12 @@ fileRoutes.put('/files', async (c) => {
   if (!body || !Number.isFinite(size) || size <= 0) throw badRequest('Content-Length and a body are required')
   const name = decodeURIComponent(c.req.header('x-file-name') ?? 'file')
   const mime = (c.req.header('content-type') ?? 'application/octet-stream').split(';')[0]!
-  const file = await uploadFile(ctxOf(c), { ...q, name, mime, size, body })
+  // A refused upload (size, quota, permission) cancels the unread body so the client gets the
+  // error promptly instead of a reset connection.
+  const file = await uploadFile(ctxOf(c), { ...q, name, mime, size, body }).catch(async (err) => {
+    await body.cancel().catch(() => undefined)
+    throw err
+  })
   return c.json({ file }, 201)
 })
 

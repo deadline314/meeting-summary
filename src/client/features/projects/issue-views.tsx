@@ -18,6 +18,7 @@ import { toast, toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
 import { openCreateIssue } from './create-issue'
 import { openDuplicate } from './duplicate-issue'
+import { useUnreadIssues } from '../../app/notifications'
 import { IssueStatusIcon, PriorityIcon } from './icons'
 import { STATUSES, canWrite, invalidateIssues, isDone, patchIssue, rememberNav, useProjects, type Access, type IssuePatch, type IssueRow, type Label, type Status } from './model'
 import { LabelChip, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
@@ -353,6 +354,7 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
         <InlinePicker issue={issue} kind="s" />
         <span className={cx('flex min-w-0 flex-1 items-center gap-1.5', issue.status === 'canceled' && 'text-fg-4 line-through')}>
           <Prefix issue={issue} />
+          <UnreadDot id={issue.id} />
           <span className="truncate">{issue.title}</span>
           <StaleBadge issue={issue} />
           {issue.subProgress && (
@@ -375,6 +377,13 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
     </IssueContextMenu>
   )
 })
+
+function UnreadDot({ id }: { id: string }) {
+  const { t } = useI18n()
+  const unread = useUnreadIssues()
+  if (!unread.has(id)) return null
+  return <span role="img" aria-label={t('notice.unread')} className="size-2 shrink-0 rounded-full bg-danger" />
+}
 
 /** ⏰ when an unfinished issue has sat in one status longer than the project's threshold. */
 export function StaleBadge({ issue, withText }: { issue: Pick<IssueRow, 'status' | 'statusChangedAt' | 'projectKey'>; withText?: boolean }) {
@@ -769,6 +778,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
         <div className="mb-1 flex items-center gap-1.5 text-xs text-fg-4">
           <PriorityIcon priority={issue.priority} />
           <span className="font-mono">{issue.ref}</span>
+          <UnreadDot id={issue.id} />
           <div className="flex-1" />
           {issue.assigneeIds.length > 0 && <AvatarStack ids={issue.assigneeIds} max={3} size="xs" />}
         </div>

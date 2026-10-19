@@ -1,8 +1,8 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, Paperclip, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, BellOff, BellRing, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, Paperclip, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
 import { ApiError, api } from '../../lib/api'
 import { useIsMobile } from '../../lib/hooks'
@@ -22,6 +22,7 @@ import { compressImage, fileUrl, uploadFile } from '../../lib/upload'
 import { confirm } from '../../ui/dialog'
 import { Composer } from '../notes/comments'
 import { Html } from '../notes/preview'
+import { markEntityRead, useUnreadIssues } from '../../app/notifications'
 import { openDuplicate } from './duplicate-issue'
 import { StaleBadge } from './issue-views'
 import { IssueStatusIcon, PriorityIcon } from './icons'
@@ -29,6 +30,7 @@ import { canWrite, invalidateIssues, isDone, readNav, useLabels, useProject, typ
 import { AssigneeIcon, LabelChip, LabelIcon, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 type Detail = {
+  subscribed: boolean
   issue: IssueRow & { role: 'viewer' | 'member' | 'owner' | 'admin'; projectState: string; projectName: string }
   relations: { type: string; ref: string; title: string; status: string }[]
   children: { ref: string; title: string; status: string; assigneeIds: string[] }[]
@@ -68,6 +70,11 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
     { id: 'issue-next', label: 'pm.next', keys: ']', group: 'nav.projects', run: () => go(1) },
   ])
   const i = d.issue
+  // Opening an issue reads its notifications.
+  const unread = useUnreadIssues()
+  useEffect(() => {
+    if (unread.has(i.id)) markEntityRead(i.id)
+  }, [unread, i.id])
   const editable = canWrite(i.role) && i.projectState === 'active'
   const conflict = base !== null && i.version > base
   const save = async (patch: IssuePatch) => {
@@ -92,6 +99,18 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
         </Button>
         <span className="font-mono text-sm text-fg-4">{i.ref}</span>
         <div className="flex-1" />
+        <IconButton
+          label={d.subscribed ? t('issue.unsubscribe') : t('issue.subscribe')}
+          icon={d.subscribed ? <BellRing /> : <BellOff />}
+          size="sm"
+          aria-pressed={d.subscribed}
+          onClick={() =>
+            api(`/api/issues/${i.ref}/subscription`, { method: 'PUT', body: { on: !d.subscribed } }).then(
+              (r) => qc.setQueryData<Detail>(['issue', i.ref], (old) => (old ? { ...old, ...(r as { subscribed: boolean }) } : old)),
+              (e) => toastError(e),
+            )
+          }
+        />
         {canWrite(i.role) && <IconButton label={t('dup.action')} icon={<CopyPlus />} size="sm" onClick={() => openDuplicate(i)} />}
         {idx >= 0 && nav && (
           <div className="flex items-center gap-1 text-xs text-fg-4">

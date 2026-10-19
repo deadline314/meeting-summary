@@ -45,7 +45,7 @@ test('admin: activity filters and CSV, member page, usage, site settings', async
   // Member page.
   await page.goto(`/admin?tab=members&member=${st.user.id}`)
   await expect(page.getByText('近 12 週活動')).toBeVisible()
-  await expect(page.getByRole('link', { name: /整理實驗紀錄/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: `${key}-1 整理實驗紀錄` })).toBeVisible()
   await shot(page, info, 'MS-44', 'member')
 
   // MS-45: usage and settings tabs.
@@ -54,10 +54,10 @@ test('admin: activity filters and CSV, member page, usage, site settings', async
   await shot(page, info, 'MS-45', 'usage')
   await page.goto('/admin?tab=site')
   await page.getByLabel('站台名稱').fill('影像實驗室')
-  await page.getByRole('button', { name: 'microscope' }).click()
+  await page.getByRole('button', { name: '顯微鏡' }).click()
   await page.getByRole('button', { name: '儲存' }).click()
   await expect(page.getByText('已儲存').first()).toBeVisible()
-  await expect(page.getByText('影像實驗室').first()).toBeVisible()
+  await expect(page.getByText('影像實驗室').filter({ visible: true }).first()).toBeVisible()
   await shot(page, info, 'MS-45', 'general')
   await page.getByRole('button', { name: '檔案' }).click()
   await page.getByLabel('單檔上限').fill('10')
@@ -65,11 +65,15 @@ test('admin: activity filters and CSV, member page, usage, site settings', async
   await expect(page.getByText('已儲存').first()).toBeVisible()
   await shot(page, info, 'MS-45', 'files')
   // A 20 MB upload is now refused.
-  const big = await st.page.request.put(`/api/files?parentType=note&parentId=${note.id}`, {
-    headers: { 'x-file-name': 'big.bin', 'content-type': 'application/octet-stream' },
-    data: Buffer.alloc(20 * 1024 * 1024),
-  })
-  expect(big.status()).toBe(413)
+  // The server refuses before reading the body, so the client may see 413 or a reset mid-upload.
+  const big = await st.page.request
+    .put(`/api/files?parentType=note&parentId=${note.id}`, {
+      headers: { 'x-file-name': 'big.bin', 'content-type': 'application/octet-stream' },
+      data: Buffer.alloc(20 * 1024 * 1024),
+    })
+    .then((r) => r.status())
+    .catch((e: Error) => (/ECONNRESET|EPIPE|socket hang up/.test(e.message) ? 413 : 0))
+  expect(big).toBe(413)
   // Settings changes are in the activity feed.
   await page.goto('/admin?tab=activity&type=site')
   await expect(page.getByText(/修改了站台設定/).first()).toBeVisible()

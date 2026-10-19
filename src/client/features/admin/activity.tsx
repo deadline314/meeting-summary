@@ -96,7 +96,7 @@ export function ActivityFeed({ actorId: fixedActor, filters = {}, onFilters }: {
     <div className="flex flex-col gap-4">
       {!fixedActor && (
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={actorId} onChange={(e) => set({ actor: e.target.value || undefined })} className="w-auto max-md:flex-1" aria-label={t('activity.filterMember')}>
+          <Select value={actorId} onChange={(e) => set({ actor: e.target.value || undefined })} className="w-auto max-md:grow max-md:basis-[calc(50%-0.25rem)]" aria-label={t('activity.filterMember')}>
             <option value="">{t('activity.allMembers')}</option>
             {[...dir.values()].map((u) => (
               <option key={u.id} value={u.id}>
@@ -104,7 +104,7 @@ export function ActivityFeed({ actorId: fixedActor, filters = {}, onFilters }: {
               </option>
             ))}
           </Select>
-          <Select value={type} onChange={(e) => set({ type: e.target.value || undefined })} className="w-auto max-md:flex-1" aria-label={t('activity.filterType')}>
+          <Select value={type} onChange={(e) => set({ type: e.target.value || undefined })} className="w-auto max-md:grow max-md:basis-[calc(50%-0.25rem)]" aria-label={t('activity.filterType')}>
             <option value="">{t('activity.allTypes')}</option>
             {TYPES.map((x) => (
               <option key={x} value={x}>
@@ -112,15 +112,15 @@ export function ActivityFeed({ actorId: fixedActor, filters = {}, onFilters }: {
               </option>
             ))}
           </Select>
-          <label className="flex items-center gap-1.5 text-xs text-fg-4">
+          <label className="flex items-center gap-1.5 text-xs text-fg-4 max-md:min-w-0 max-md:grow max-md:basis-[calc(50%-0.25rem)]">
             {t('activity.from')}
-            <Input type="date" value={filters.from ?? ''} max={filters.to} onChange={(e) => set({ from: e.target.value || undefined })} className="h-9 w-auto" />
+            <Input type="date" value={filters.from ?? ''} max={filters.to} onChange={(e) => set({ from: e.target.value || undefined })} className="h-9 w-auto max-md:min-w-0 max-md:flex-1" />
           </label>
-          <label className="flex items-center gap-1.5 text-xs text-fg-4">
+          <label className="flex items-center gap-1.5 text-xs text-fg-4 max-md:min-w-0 max-md:grow max-md:basis-[calc(50%-0.25rem)]">
             {t('activity.to')}
-            <Input type="date" value={filters.to ?? ''} min={filters.from} onChange={(e) => set({ to: e.target.value || undefined })} className="h-9 w-auto" />
+            <Input type="date" value={filters.to ?? ''} min={filters.from} onChange={(e) => set({ to: e.target.value || undefined })} className="h-9 w-auto max-md:min-w-0 max-md:flex-1" />
           </label>
-          <Button asChild size="sm" variant="secondary" icon={<Download className="size-4" />} className="ml-auto">
+          <Button asChild size="sm" variant="secondary" icon={<Download className="size-4" />} className="ml-auto max-md:w-full">
             <a href={`/api/admin/activity.csv?${params}`} download>
               {t('activity.csv')}
             </a>

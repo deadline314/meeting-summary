@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Check, KeyRound, Laptop, Monitor, Moon, Palette, ShieldCheck, Smartphone, Sun, User } from 'lucide-react'
+import { Bell, Check, KeyRound, Laptop, Monitor, Moon, Palette, ShieldCheck, Smartphone, Sun, User } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useState } from 'react'
 import type { UserDto } from '@shared/types'
@@ -17,8 +17,9 @@ import { Badge, Card, PageHeader } from '../../ui/misc'
 import { Segmented, TabBar } from '../../ui/tabs'
 import { toast, toastError } from '../../ui/toast'
 import { ApiKeysPanel } from './api-keys'
+import { NotificationPrefs } from './notification-prefs'
 
-export type SettingsTab = 'profile' | 'appearance' | 'devices' | 'api' | 'admin'
+export type SettingsTab = 'profile' | 'appearance' | 'notifications' | 'devices' | 'api' | 'admin'
 
 export function SettingsPage({ tab, onTab }: { tab: SettingsTab; onTab(t: SettingsTab): void }) {
   const { t } = useI18n()
@@ -31,6 +32,7 @@ export function SettingsPage({ tab, onTab }: { tab: SettingsTab; onTab(t: Settin
         tabs={[
           { value: 'profile', label: t('settings.profile'), icon: <User /> },
           { value: 'appearance', label: t('settings.appearance'), icon: <Palette /> },
+          { value: 'notifications', label: t('nav.notifications'), icon: <Bell /> },
           { value: 'devices', label: t('settings.devices'), icon: <Laptop /> },
           { value: 'api', label: t('settings.apiKeys'), icon: <KeyRound /> },
           { value: 'admin', label: t('settings.adminKey'), icon: <ShieldCheck /> },
@@ -39,6 +41,7 @@ export function SettingsPage({ tab, onTab }: { tab: SettingsTab; onTab(t: Settin
       <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="mt-6">
         {tab === 'profile' && <Profile />}
         {tab === 'appearance' && <Appearance />}
+        {tab === 'notifications' && <NotificationPrefs />}
         {tab === 'devices' && <Devices />}
         {tab === 'api' && <ApiKeysPanel />}
         {tab === 'admin' && <AdminKey />}

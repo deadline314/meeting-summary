@@ -12,6 +12,7 @@ import { Field, Input, Textarea } from '../../ui/field'
 import { Card, Skeleton } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
 import { toast, toastError } from '../../ui/toast'
+import { Tooltip } from '../../ui/tooltip'
 
 /** Preset site icons (stored by name); `doc` is the built-in logo. */
 export const SITE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
@@ -90,16 +91,17 @@ function Form({ tab, s }: { tab: Exclude<SubTab, 'key'>; s: Settings }) {
           <span className="text-[13px] font-medium text-fg-2">{t('site.icon')}</span>
           <div className="flex flex-wrap gap-2">
             {Object.entries(SITE_ICONS).map(([k, Icon]) => (
+              <Tooltip key={k} label={t(`site.icon.${k}` as MsgKey)}>
               <button
-                key={k}
                 type="button"
-                aria-label={k}
+                aria-label={t(`site.icon.${k}` as MsgKey)}
                 aria-pressed={icon === k}
                 onClick={() => setIcon(k)}
                 className={cx('flex size-11 items-center justify-center rounded-xl border transition-colors', icon === k ? 'border-accent bg-accent text-accent-fg' : 'border-line text-fg-3 hover:border-line-strong')}
               >
                 <Icon className="size-5" />
               </button>
+              </Tooltip>
             ))}
           </div>
         </div>

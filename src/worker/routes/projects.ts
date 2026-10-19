@@ -16,6 +16,7 @@ import {
   idempotent,
   issueDetail,
   duplicateIssue,
+  setSubscribed,
   issueStats,
   issueTimeline,
   listIssues,
@@ -195,6 +196,11 @@ projectRoutes.post('/projects/:key/issues', async (c) => {
 })
 
 projectRoutes.get('/issues/:ref', async (c) => c.json(await issueDetail(ctxOf(c), c.req.param('ref'))))
+
+projectRoutes.put('/issues/:ref/subscription', async (c) => {
+  const { on } = await body(c, z.object({ on: z.boolean() }))
+  return c.json(await setSubscribed(ctxOf(c), c.req.param('ref'), on))
+})
 
 projectRoutes.post('/issues/:ref/duplicate', async (c) => {
   const ctx = ctxOf(c)

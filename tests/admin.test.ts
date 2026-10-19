@@ -60,4 +60,14 @@ describe('admin: settings, usage, activity export, member page', () => {
     expect(o.issues[0]!.ref).toBe(`${key}-1`)
     expect(o.heatmap.reduce((a, h) => a + h.n, 0)).toBeGreaterThanOrEqual(3)
   })
+  it('a custom note template is used for new notes, with carried-over action items', async () => {
+    const owner = await login('teacher@example.com')
+    await owner.call('/api/admin/settings/note_template_zh', { method: 'PUT', body: { value: ['## 自訂開頭', '{{carryover}}', '## 五、待辦事項', '| # | 待辦事項 | 負責人 | 期限 |', '|---|---|---|---|', '| 1 | 交報告 | 小明 | 10/30 |'].join('\n') } })
+    const title = `tpl-${crypto.randomUUID().slice(0, 6)}`
+    const a = (await owner.call<{ note: { content: string } }>('/api/notes', { method: 'POST', body: { title, startsAt: Date.now() - 86400_000 } })).body.note
+    expect(a.content.startsWith('## 自訂開頭')).toBe(true)
+    const b = (await owner.call<{ note: { content: string } }>('/api/notes', { method: 'POST', body: { title, startsAt: Date.now() } })).body.note
+    expect(b.content).toContain('| 交報告 | 小明 |')
+    await owner.call('/api/admin/settings/note_template_zh', { method: 'PUT', body: { value: '' } })
+  })
 })
