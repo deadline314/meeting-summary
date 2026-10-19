@@ -152,7 +152,7 @@ function MemberMenu({ u }: { u: UserDto }) {
       if (r.user.id === me.id) queryClient.invalidateQueries({ queryKey: ['me'] })
       if (body.role) toast(t('admin.roleUpdated', { name: u.name, role: t(`role.${body.role}`) }))
     },
-    onError: toastError,
+    onError: (e) => toastError(e),
   })
   const canTouchOwner = me.role === 'owner'
   if (u.role === 'owner' && !canTouchOwner) return <span className="size-10" />
@@ -208,7 +208,7 @@ function SiteSettings() {
       setFresh(r.key)
       queryClient.invalidateQueries({ queryKey: ['admin-key'] })
     },
-    onError: toastError,
+    onError: (e) => toastError(e),
   })
   return (
     <Card className="p-5">

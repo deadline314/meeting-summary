@@ -23,7 +23,7 @@ import { cx } from '../ui/cx'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from '../ui/menu'
 import { Kbd } from '../ui/misc'
 import { Tooltip } from '../ui/tooltip'
-import { openPalette } from './palette'
+import { CommandPalette, ShortcutHelp, openPalette } from './palette'
 import { PrefsSync } from './prefs-sync'
 
 type NavItem = { to: string; key: MsgKey; icon: ReactNode; admin?: boolean; exact?: boolean }
@@ -68,6 +68,8 @@ export function AppShell() {
   return (
     <div className="flex min-h-dvh bg-canvas">
       <PrefsSync />
+      <CommandPalette />
+      <ShortcutHelp />
       {/* Desktop sidebar */}
       <motion.aside
         animate={{ width: collapsed ? 68 : 232 }}
@@ -160,7 +162,7 @@ export function AppShell() {
           )}
         </AnimatePresence>
 
-        <main className="min-w-0 flex-1 pb-24 md:pb-8">
+        <main className="min-w-0 flex-1 pb-24 md:pb-0">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={section}

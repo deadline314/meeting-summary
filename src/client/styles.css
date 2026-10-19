@@ -108,6 +108,23 @@
 [data-accent='rose'] { --h: 12; --c: 0.19; }
 [data-accent='slate'] { --h: 250; --c: 0.04; }
 
+/* Accent tokens are recomputed on every [data-accent] element, so swatches can preview other accents. */
+[data-accent] {
+  --t-accent: oklch(0.53 var(--c) var(--h));
+  --t-accent-hover: oklch(0.47 var(--c) var(--h));
+  --t-accent-fg: oklch(0.99 0 0);
+  --t-accent-soft: oklch(0.95 calc(var(--c) * 0.25) var(--h));
+  --t-accent-text: oklch(0.45 var(--c) var(--h));
+}
+[data-mode='dark'][data-accent],
+[data-mode='dark'] [data-accent] {
+  --t-accent: oklch(0.62 var(--c) var(--h));
+  --t-accent-hover: oklch(0.68 var(--c) var(--h));
+  --t-accent-fg: oklch(0.15 0.02 var(--h));
+  --t-accent-soft: oklch(0.3 calc(var(--c) * 0.45) var(--h));
+  --t-accent-text: oklch(0.78 calc(var(--c) * 0.8) var(--h));
+}
+
 [data-mode='dark'] {
   color-scheme: dark;
   --t-canvas: oklch(0.17 0.012 var(--h));

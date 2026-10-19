@@ -8,7 +8,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    cloudflare(),
+    // E2E runs use their own throwaway local state so screenshots are deterministic.
+    cloudflare({ persistState: process.env.E2E ? { path: '.wrangler/e2e' } : true }),
     VitePWA({
       registerType: 'prompt',
       injectRegister: false,

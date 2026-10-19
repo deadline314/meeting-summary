@@ -3,7 +3,6 @@ import { RouterProvider } from '@tanstack/react-router'
 import { MotionConfig } from 'motion/react'
 import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CommandPalette, ShortcutHelp } from './app/palette'
 import { UpdatePrompt } from './app/pwa'
 import { makeRouter } from './app/router'
 import { installKeyboard } from './lib/actions'
@@ -29,8 +28,6 @@ function App() {
           <MotionConfig reducedMotion="user">
             <TooltipProvider>
               <RouterProvider router={router} />
-              <CommandPalette />
-              <ShortcutHelp />
               <ConfirmHost />
               <Toaster />
               <UpdatePrompt />

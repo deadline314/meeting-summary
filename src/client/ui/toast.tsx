@@ -6,18 +6,19 @@ import { translate, type Locale, type MsgKey } from '../lib/i18n'
 import { cx } from './cx'
 
 type Tone = 'success' | 'info' | 'error'
-type ToastItem = { id: number; tone: Tone; text: string; sub?: string }
+type ToastAction = { label: string; run(): void }
+type ToastItem = { id: number; tone: Tone; text: string; sub?: string; action?: ToastAction }
 
 let items: ToastItem[] = []
 let seq = 0
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 
-export function toast(text: string, tone: Tone = 'success', sub?: string) {
+export function toast(text: string, tone: Tone = 'success', sub?: string, action?: ToastAction) {
   const id = ++seq
-  items = [...items.slice(-3), { id, tone, text, sub }]
+  items = [...items.slice(-3), { id, tone, text, sub, action }]
   emit()
-  setTimeout(() => dismiss(id), tone === 'error' ? 6000 : 3500)
+  setTimeout(() => dismiss(id), action ? 9000 : tone === 'error' ? 6000 : 3500)
 }
 
 function dismiss(id: number) {
@@ -26,13 +27,13 @@ function dismiss(id: number) {
 }
 
 /** Shows the translated server error, with its request id for support. */
-export function toastError(err: unknown) {
+export function toastError(err: unknown, action?: ToastAction) {
   const locale: Locale = document.documentElement.lang.startsWith('en') ? 'en' : 'zh'
   if (err instanceof ApiError) {
     const key = `error.${err.code}` as MsgKey
-    toast(translate(locale, key, err.params), 'error', err.requestId ? translate(locale, 'common.requestId', { id: err.requestId.slice(0, 8) }) : undefined)
+    toast(translate(locale, key, err.params), 'error', err.requestId ? translate(locale, 'common.requestId', { id: err.requestId.slice(0, 8) }) : undefined, action)
   } else {
-    toast(translate(locale, 'error.internal'), 'error')
+    toast(translate(locale, 'error.internal'), 'error', undefined, action)
   }
 }
 
@@ -69,6 +70,17 @@ export function Toaster() {
                 <div className="text-sm font-medium text-fg">{i.text}</div>
                 {i.sub && <div className="mt-0.5 text-xs text-fg-4">{i.sub}</div>}
               </div>
+              {i.action && (
+                <button
+                  onClick={() => {
+                    i.action!.run()
+                    dismiss(i.id)
+                  }}
+                  className="shrink-0 rounded-lg px-2 py-0.5 text-sm font-semibold text-accent-text hover:bg-accent-soft"
+                >
+                  {i.action.label}
+                </button>
+              )}
               <button aria-label="dismiss" onClick={() => dismiss(i.id)} className="text-fg-4 hover:text-fg">
                 <X className="size-4" />
               </button>

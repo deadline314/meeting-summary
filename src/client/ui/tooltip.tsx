@@ -1,5 +1,6 @@
 import { Tooltip as T } from 'radix-ui'
 import type { ReactNode } from 'react'
+import { useMediaQuery } from '../lib/hooks'
 import { Kbd } from './misc'
 
 export const TooltipProvider = ({ children }: { children: ReactNode }) => (
@@ -20,7 +21,9 @@ export function Tooltip({
   side?: 'top' | 'bottom' | 'left' | 'right'
   children: ReactNode
 }) {
-  if (!label) return <>{children}</>
+  // Touch screens have no hover; a focus-triggered tooltip there is just noise.
+  const touch = useMediaQuery('(hover: none)')
+  if (!label || touch) return <>{children}</>
   return (
     <T.Root>
       <T.Trigger asChild>{children}</T.Trigger>

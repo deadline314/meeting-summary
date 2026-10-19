@@ -58,7 +58,7 @@ function Profile() {
       refreshMe(r.user)
       toast(t('settings.renamed'))
     },
-    onError: toastError,
+    onError: (e) => toastError(e),
   })
   const dirty = name.trim() !== me.name || (avatar.trim() || null) !== me.avatarUrl
   return (
@@ -235,7 +235,7 @@ function AdminKey() {
       toast(t('settings.adminKeySuccess'))
       setKey('')
     },
-    onError: toastError,
+    onError: (e) => toastError(e),
   })
   if (isAdminRole(me.role))
     return (

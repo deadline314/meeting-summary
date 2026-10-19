@@ -1,0 +1,156 @@
+import { SELF, runDurableObjectAlarm, env } from 'cloudflare:test'
+import * as decoding from 'lib0/decoding'
+import * as encoding from 'lib0/encoding'
+import * as syncProtocol from 'y-protocols/sync'
+import * as Y from 'yjs'
+import { describe, expect, it } from 'vitest'
+import { login, uniq } from './helpers'
+
+type NoteRes = { note: { id: string; content: string; version: number; canEdit: boolean } }
+
+async function connect(cookie: string, noteId: string) {
+  const res = await SELF.fetch(`http://localhost/ws/doc/${noteId}`, { headers: { upgrade: 'websocket', cookie } })
+  const ws = res.webSocket!
+  ws.accept()
+  const doc = new Y.Doc()
+  let closed: number | null = null
+  ws.addEventListener('close', (e) => (closed = e.code))
+  ws.addEventListener('message', async (e) => {
+    const raw = e.data instanceof Blob ? await e.data.arrayBuffer() : (e.data as ArrayBuffer)
+    const d = decoding.createDecoder(new Uint8Array(raw))
+    if (decoding.readVarUint(d) !== 0) return
+    const reply = encoding.createEncoder()
+    encoding.writeVarUint(reply, 0)
+    syncProtocol.readSyncMessage(d, reply, doc, 'remote')
+    if (encoding.length(reply) > 1) ws.send(encoding.toUint8Array(reply))
+  })
+  doc.on('update', (u: Uint8Array, origin: unknown) => {
+    if (origin === 'remote') return
+    const e = encoding.createEncoder()
+    encoding.writeVarUint(e, 0)
+    syncProtocol.writeUpdate(e, u)
+    ws.send(encoding.toUint8Array(e))
+  })
+  // initial handshake
+  const e = encoding.createEncoder()
+  encoding.writeVarUint(e, 0)
+  syncProtocol.writeSyncStep1(e, doc)
+  ws.send(encoding.toUint8Array(e))
+  await sleep(150)
+  return { ws, doc, text: doc.getText('content'), closed: () => closed }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+describe('meeting notes', () => {
+  it('creates a note from the template and carries over action items', async () => {
+    const a = await login(uniq('n'))
+    const title = `Weekly ${crypto.randomUUID().slice(0, 4)}`
+    const first = await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title, startsAt: Date.parse('2026-10-12T06:00:00Z') } })
+    expect(first.status).toBe(201)
+    expect(first.body.note.content).toContain('## 一、會議目的')
+    // Put real action items in the first note, then create next week's.
+    const withItems = first.body.note.content.replace('| 1 | [具體要做的事] | [姓名] | 10/25 |', '| 1 | 整理資料集 | 小明 | 10/18 |')
+    await env.DB.prepare('update notes set content = ? where id = ?').bind(withItems, first.body.note.id).run()
+    const second = await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title, startsAt: Date.parse('2026-10-19T06:00:00Z') } })
+    expect(second.body.note.content).toContain('| 整理資料集 | 小明 | 進行中 | 10/18 |')
+  })
+
+  it('syncs edits between two people and records who wrote what', async () => {
+    const a = await login(uniq('a'))
+    const b = await login(uniq('b'))
+    const aId = (await a.call<{ user: { id: string } }>('/api/me')).body.user.id
+    const bId = (await b.call<{ user: { id: string } }>('/api/me')).body.user.id
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'Sync', startsAt: Date.now(), attendeeIds: [aId, bId] } })).body
+    const ca = await connect(a.cookie, note.id)
+    const cb = await connect(b.cookie, note.id)
+    expect(ca.text.toString()).toContain('會議目的')
+    ca.text.insert(0, 'AAA ')
+    await sleep(100)
+    cb.text.insert(0, 'BBB ')
+    await sleep(200)
+    expect(ca.text.toString().startsWith('BBB AAA ') || ca.text.toString().startsWith('AAA BBB ')).toBe(true)
+    expect(cb.text.toString()).toBe(ca.text.toString())
+    const authors = (await a.call<{ clients: Record<string, { userId: string }> }>(`/api/notes/${note.id}/authors`)).body.clients
+    expect(authors[String(ca.doc.clientID)]?.userId).toBe(aId)
+    expect(authors[String(cb.doc.clientID)]?.userId).toBe(bId)
+    ca.ws.close()
+    cb.ws.close()
+  })
+
+  it('rejects an update that forges another account’s client id', async () => {
+    const a = await login(uniq('fa'))
+    const b = await login(uniq('fb'))
+    const aId = (await a.call<{ user: { id: string } }>('/api/me')).body.user.id
+    const bId = (await b.call<{ user: { id: string } }>('/api/me')).body.user.id
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'Forge', startsAt: Date.now(), attendeeIds: [aId, bId] } })).body
+    const ca = await connect(a.cookie, note.id)
+    ca.text.insert(0, 'mine ')
+    await sleep(150)
+    const cb = await connect(b.cookie, note.id)
+    // B crafts an update with A's client id.
+    const forged = new Y.Doc()
+    Y.applyUpdate(forged, Y.encodeStateAsUpdate(ca.doc))
+    forged.clientID = ca.doc.clientID // set after applying, or Yjs regenerates it
+    const before = Y.encodeStateVector(forged)
+    forged.getText('content').insert(0, 'fake ')
+    const e = encoding.createEncoder()
+    encoding.writeVarUint(e, 0)
+    syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(forged, before))
+    cb.ws.send(encoding.toUint8Array(e))
+    await sleep(200)
+    expect(ca.text.toString().startsWith('fake')).toBe(false)
+    expect(cb.closed()).toBe(4403)
+    ca.ws.close()
+  })
+
+  it('read-only viewers cannot edit', async () => {
+    const a = await login(uniq('ra'))
+    const v = await login(uniq('rv'))
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'RO', startsAt: Date.now() } })).body
+    const cv = await connect(v.cookie, note.id)
+    cv.text.insert(0, 'nope ')
+    await sleep(150)
+    const ca = await connect(a.cookie, note.id)
+    expect(ca.text.toString().startsWith('nope')).toBe(false)
+    ca.ws.close()
+    cv.ws.close()
+  })
+
+  it('turns edit sessions into versions and restores', async () => {
+    const a = await login(uniq('h'))
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'Hist', startsAt: Date.now() } })).body
+    const ca = await connect(a.cookie, note.id)
+    ca.text.insert(0, 'v1 ')
+    await sleep(100)
+    ca.ws.close()
+    await sleep(100)
+    const stub = env.DOC_ROOM.get(env.DOC_ROOM.idFromName(note.id))
+    await runDurableObjectAlarm(stub)
+    const list = await a.call<{ items: { id: string; inserted: number }[] }>(`/api/notes/${note.id}/versions`)
+    expect(list.body.items[0]?.inserted).toBe(3)
+    const first = list.body.items[0]!.id
+    const cb = await connect(a.cookie, note.id)
+    cb.text.insert(0, 'v2 ')
+    await sleep(100)
+    expect((await a.call(`/api/notes/${note.id}/versions/${first}/restore`, { method: 'POST' })).status).toBe(200)
+    await sleep(100)
+    expect(cb.text.toString().startsWith('v1 ')).toBe(true)
+    cb.ws.close()
+  })
+
+  it('comments: thread, reply, resolve; outsiders get 404', async () => {
+    const a = await login(uniq('c'))
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'C', startsAt: Date.now() } })).body
+    const t = await a.call<{ comment: { id: string } }>(`/api/notes/${note.id}/comments`, {
+      method: 'POST',
+      body: { body: '日期不一致', anchor: { start: 'x', end: 'y' }, quote: '11/15' },
+    })
+    expect(t.status).toBe(201)
+    const b = await login(uniq('c2'))
+    expect((await b.call(`/api/notes/${note.id}/comments`, { method: 'POST', body: { body: 'ok', parentId: t.body.comment.id } })).status).toBe(201)
+    const r = await b.call<{ comment: { resolvedAt: number } }>(`/api/notes/${note.id}/comments/${t.body.comment.id}`, { method: 'PATCH', body: { resolved: true } })
+    expect(r.body.comment.resolvedAt).toBeTruthy()
+    expect((await a.call('/api/notes/does-not-exist/comments')).status).toBe(404)
+  })
+})

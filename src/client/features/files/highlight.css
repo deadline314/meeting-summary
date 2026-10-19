@@ -1,0 +1,8 @@
+/* Syntax colours mapped onto theme tokens so code follows light/dark and accent. */
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: var(--t-accent-text); font-weight: 600; }
+.hljs-string, .hljs-attr, .hljs-template-variable { color: var(--t-success); }
+.hljs-number, .hljs-literal { color: var(--t-warning); }
+.hljs-comment, .hljs-quote { color: var(--t-fg-4); font-style: italic; }
+.hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--t-info); }
+.hljs-type, .hljs-class .hljs-title { color: var(--t-danger); }
+.hljs-meta, .hljs-symbol { color: var(--t-fg-3); }

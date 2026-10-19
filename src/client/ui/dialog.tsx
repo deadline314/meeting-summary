@@ -33,6 +33,12 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
         <D.Content
           data-layer
           onEscapeKeyDown={guard}
+          // Keep focus where the content put it (autoFocus); otherwise focus the panel, not the close button.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            const panel = e.currentTarget as HTMLElement
+            if (!panel.contains(document.activeElement)) panel.focus()
+          }}
           onPointerDownOutside={guard}
           aria-describedby={description ? undefined : undefined}
           className={cx(

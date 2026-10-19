@@ -47,7 +47,7 @@ export function useActivityText() {
   const dir = useDirectory()
   const name = (id: unknown) => (typeof id === 'string' ? dir.get(id)?.name : undefined) ?? t('common.unknownUser')
   return (a: ActivityRow) => {
-    const key = `activity.${a.entityType}.${a.action}` as MsgKey
+    const key = `activity.${a.entityType}.${a.action}${a.action === 'role_changed' && a.data.via === 'key' ? '_key' : ''}` as MsgKey
     const params: Record<string, string | number> = { actor: name(a.actorId), target: name(a.entityId) }
     for (const [k, v] of Object.entries(a.data)) {
       if (typeof v === 'string' || typeof v === 'number') params[k] = v

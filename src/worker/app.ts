@@ -9,8 +9,10 @@ import { AppError } from './lib/errors'
 import { errorFields, log } from './lib/log'
 import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
+import { fileRoutes, rawFileRoute } from './routes/files'
 import { homeRoutes } from './routes/home'
 import { meRoutes } from './routes/me'
+import { noteRoutes, noteSocket } from './routes/notes'
 import { SESSION_COOKIE, SESSION_TTL_MS, resolveSession } from './services/auth'
 
 export const app = new Hono<AppEnv>()
@@ -75,6 +77,10 @@ app.route('/auth', authRoutes)
 app.route('/api', meRoutes)
 app.route('/api/admin', adminRoutes)
 app.route('/api', homeRoutes)
+app.route('/api', noteRoutes)
+app.route('/api', fileRoutes)
+app.route('/files', rawFileRoute)
+app.get('/ws/doc/:id', noteSocket)
 
 app.notFound((c) => {
   const body: ApiErrorBody = { error: { code: 'not_found', message: 'Not found', requestId: c.get('requestId') } }

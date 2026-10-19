@@ -91,7 +91,7 @@ const adminRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   welcomeRoute,
-  appLayout.addChildren([homeRoute, settingsRoute, adminRoute, ...appRoutes()]),
+  appLayout.addChildren([homeRoute, settingsRoute, adminRoute, ...appRoutes(appLayout)]),
 ])
 
 export function makeRouter(queryClient: QueryClient) {
