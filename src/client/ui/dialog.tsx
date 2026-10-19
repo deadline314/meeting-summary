@@ -29,7 +29,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
-        <D.Overlay className="anim-fade fixed inset-0 z-50 bg-overlay backdrop-blur-[2px]" />
+        <D.Overlay className="anim-fade fixed inset-0 z-50 bg-overlay" />
         <D.Content
           data-layer
           onEscapeKeyDown={guard}

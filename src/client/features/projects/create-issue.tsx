@@ -150,7 +150,7 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
   return (
     <D.Root open onOpenChange={(o) => !o && requestClose()}>
       <D.Portal>
-        <D.Overlay className="anim-fade fixed inset-0 z-50 bg-overlay backdrop-blur-[2px]" />
+        <D.Overlay className="anim-fade fixed inset-0 z-50 bg-overlay" />
         <D.Content
           data-layer
           onKeyDown={onKey}
