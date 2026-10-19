@@ -50,4 +50,15 @@ describe('notifications', () => {
     await wait()
     expect((await b.call<N>('/api/notifications')).body.items.find((n) => n.entityId === i.id)?.type).toBe('mention')
   })
+  it('citing an issue in a comment logs "referenced from" on the cited issue once', async () => {
+    const { a, k } = await pair()
+    const x = (await a.call<{ issue: { ref: string } }>(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'x' } })).body.issue
+    const y = (await a.call<{ issue: { ref: string } }>(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'y' } })).body.issue
+    const c = (await a.call<{ comment: { id: string; version: number } }>(`/api/issues/${x.ref}/comments`, { method: 'POST', body: { body: `see #[issue:${y.ref}]` } })).body.comment
+    expect((await a.call(`/api/issues/${x.ref}/comments/${c.id}`, { method: 'PATCH', body: { body: `still #[issue:${y.ref}]`, version: c.version } })).status).toBe(200)
+    const tl = (await a.call<{ items: { change?: { action: string; data: { from?: string } } }[] }>(`/api/issues/${y.ref}/timeline?kind=changes`)).body.items
+    const refs = tl.filter((i) => i.change?.action === 'referenced')
+    expect(refs).toHaveLength(1)
+    expect(refs[0]!.change!.data.from).toBe(x.ref)
+  })
 })

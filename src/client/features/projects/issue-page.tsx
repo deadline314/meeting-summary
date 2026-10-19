@@ -733,6 +733,14 @@ function Timeline({ issueRef, issueId, editable, memberIds }: { issueRef: string
               {it.change.actorId ? <UserAvatar id={it.change.actorId} size="xs" /> : <span className="size-5" />}
               <span>
                 <UserName id={it.change.actorId} className="font-medium text-fg-3" /> {describe(it.change)}
+                {it.change.action === 'referenced' && typeof it.change.data.from === 'string' && (
+                  <>
+                    {' '}
+                    <Link to={`/projects/${it.change.data.from.split('-')[0]}/${it.change.data.from}`} className="font-mono text-accent-text hover:underline">
+                      {it.change.data.from}
+                    </Link>
+                  </>
+                )}
                 {typeof it.change.data.copiedFrom === 'string' && (
                   <>
                     {' · '}
@@ -839,6 +847,7 @@ function useChangeText() {
   return (c: { action: string; data: Record<string, unknown> }) => {
     if (c.action === 'created') return t('change.created')
     if (c.action === 'deleted') return t('change.deleted')
+    if (c.action === 'referenced') return t('change.referenced')
     if (c.action === 'related') return t('change.related', { type: t(`pm.rel.${c.data.type as 'relates'}` as MsgKey), target: String(c.data.target ?? '') })
     const f = String(c.data.field ?? '')
     const v = (x: unknown) =>

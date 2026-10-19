@@ -406,7 +406,7 @@ export async function createIssue(ctx: Ctx, key: string, input: IssueInput) {
   const ref = refOf(project, issue)
   await activity(ctx, { entityType: 'issue', entityId: id, action: 'created', data: { ref, title: issue.title, status }, projectId: project.id }).run()
   notify(ctx, assigneeIds, { type: 'issue_assigned', entityType: 'issue', entityId: id, data: { ref, title: issue.title }, projectId: project.id })
-  await syncReferences(ctx, 'issue', id, input.description ?? '')
+  await syncReferences(ctx, 'issue', id, input.description ?? '', ref)
   return { ...issue, ref }
 }
 
@@ -473,7 +473,7 @@ export async function updateIssue(ctx: Ctx, ref: string, version: number, patch:
   if (res[0].meta.changes === 0) throw conflict()
   if (newAssignees.length) notify(ctx, newAssignees, { type: 'issue_assigned', entityType: 'issue', entityId: issue.id, data: { ref, title: set.title ?? issue.title }, projectId: project.id })
   if (set.status) notify(ctx, await subscribers(ctx, issue.id), { type: 'issue_status', entityType: 'issue', entityId: issue.id, data: { ref, title: issue.title, to: set.status }, projectId: project.id })
-  if (patch.description !== undefined) await syncReferences(ctx, 'issue', issue.id, patch.description)
+  if (patch.description !== undefined) await syncReferences(ctx, 'issue', issue.id, patch.description, ref)
   return { ...issue, ...set, ref }
 }
 
@@ -722,7 +722,7 @@ export async function addIssueComment(ctx: Ctx, ref: string, body: string, paren
   const subs = (await subscribers(ctx, issue.id)).filter((id) => !mentioned.includes(id))
   notify(ctx, subs, { type: 'issue_comment', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id }, projectId: project.id })
   notify(ctx, mentioned, { type: 'mention', entityType: 'issue', entityId: issue.id, data: { ref: ref2, title: issue.title, commentId: c.id }, projectId: project.id })
-  await syncReferences(ctx, 'issue_comment', c.id, body)
+  await syncReferences(ctx, 'issue_comment', c.id, body, ref2)
   return c
 }
 
@@ -736,7 +736,7 @@ export async function editIssueComment(ctx: Ctx, ref: string, id: string, versio
     .set({ body, editedAt: Date.now(), version: c.version + 1 })
     .where(and(eq(issueComments.id, id), eq(issueComments.version, version)))
   if (res.meta.changes === 0) throw conflict()
-  await syncReferences(ctx, 'issue_comment', id, body)
+  await syncReferences(ctx, 'issue_comment', id, body, ref)
   return { ...c, body, version: c.version + 1 }
 }
 
@@ -750,8 +750,12 @@ export async function deleteIssueComment(ctx: Ctx, ref: string, id: string) {
 
 // ---------- #[issue:KEY-N] / #[task:id] back-references ----------
 
-/** Records which issues/tasks a body references (for "mentioned in" on the target). Never throws. */
-export async function syncReferences(ctx: Ctx, sourceType: 'note' | 'issue_comment' | 'issue', sourceId: string, body: string) {
+/**
+ * Records which issues/tasks a body references (for "mentioned in" on the target). When an issue
+ * or issue comment newly cites another issue, the cited issue's timeline gets "referenced from
+ * KEY-N". Never throws.
+ */
+export async function syncReferences(ctx: Ctx, sourceType: 'note' | 'issue_comment' | 'issue', sourceId: string, body: string, fromRef?: string) {
   try {
     const targets: { type: 'issue' | 'task'; id: string }[] = []
     for (const m of body.matchAll(/#\[(issue|task):([\w-]+)\]/g)) {
@@ -761,9 +765,20 @@ export async function syncReferences(ctx: Ctx, sourceType: 'note' | 'issue_comme
         if (found) targets.push({ type: 'issue', id: found.issue.id })
       }
     }
+    const before = new Set(
+      (await ctx.db.select({ id: references.targetId }).from(references).where(and(eq(references.sourceType, sourceType), eq(references.sourceId, sourceId))).all()).map((r) => r.id),
+    )
     await ctx.db.delete(references).where(and(eq(references.sourceType, sourceType), eq(references.sourceId, sourceId)))
     for (const t of targets)
       await ctx.db.insert(references).values({ sourceType, sourceId, targetType: t.type, targetId: t.id, createdAt: Date.now() }).onConflictDoNothing()
+    if (!fromRef) return
+    for (const t of targets) {
+      if (t.type !== 'issue' || before.has(t.id)) continue
+      const target = await ctx.db.select({ number: issues.number, projectId: issues.projectId }).from(issues).where(eq(issues.id, t.id)).get()
+      const key = target && (await ctx.db.select({ key: projects.key }).from(projects).where(eq(projects.id, target.projectId)).get())?.key
+      if (!target || !key || `${key}-${target.number}` === fromRef) continue
+      await activity(ctx, { entityType: 'issue', entityId: t.id, action: 'referenced', data: { ref: `${key}-${target.number}`, from: fromRef }, projectId: target.projectId }).run()
+    }
   } catch {
     /* side effect only */
   }

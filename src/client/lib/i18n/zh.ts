@@ -845,4 +845,5 @@ export const zh = {
   'comments.edit': "編輯",
   'files.pasted': "已上傳附件",
   'actions.project': "建立在專案",
+  'change.referenced': "在另一張票引用了這張：",
 } as const

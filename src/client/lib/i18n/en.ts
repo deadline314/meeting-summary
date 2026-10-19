@@ -846,4 +846,5 @@ export const en: Record<keyof typeof zh, string> = {
   'comments.edit': "Edit",
   'files.pasted': "Attachment uploaded",
   'actions.project': "Project",
+  'change.referenced': "referenced this issue from",
 }
