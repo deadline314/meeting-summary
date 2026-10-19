@@ -71,7 +71,7 @@ export function Segmented<const T extends string>({
             o.value === value ? 'bg-surface text-fg shadow-sm' : 'text-fg-3 hover:text-fg-2',
           )}
         >
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 whitespace-nowrap">
             {o.icon}
             {(!compact || o.value === value || !o.icon) && o.label}
           </span>
