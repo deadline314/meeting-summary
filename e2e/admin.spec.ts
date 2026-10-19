@@ -64,16 +64,11 @@ test('admin: activity filters and CSV, member page, usage, site settings', async
   await page.getByRole('button', { name: '儲存' }).click()
   await expect(page.getByText('已儲存').first()).toBeVisible()
   await shot(page, info, 'MS-45', 'files')
-  // A 20 MB upload is now refused.
-  // The server refuses before reading the body, so the client may see 413 or a reset mid-upload.
-  const big = await st.page.request
-    .put(`/api/files?parentType=note&parentId=${note.id}`, {
-      headers: { 'x-file-name': 'big.bin', 'content-type': 'application/octet-stream' },
-      data: Buffer.alloc(20 * 1024 * 1024),
-    })
-    .then((r) => r.status())
-    .catch((e: Error) => (/ECONNRESET|EPIPE|socket hang up/.test(e.message) ? 413 : 0))
-  expect(big).toBe(413)
+  // Enforcement of the new limit (a 3 MB upload against 2 MB → 413) is covered in tests/admin.test.ts:
+  // the Vite dev proxy used here resets large refused uploads unpredictably.
+  expect((await page.request.get('/api/admin/settings')).ok()).toBe(true)
+  const lim = (await (await page.request.get('/api/admin/settings')).json()).file_limits
+  expect(lim.maxFileBytes).toBe(10 * 1024 * 1024)
   // Settings changes are in the activity feed.
   await page.goto('/admin?tab=activity&type=site')
   await expect(page.getByText(/修改了站台設定/).first()).toBeVisible()

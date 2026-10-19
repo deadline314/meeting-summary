@@ -79,6 +79,8 @@ test('sign-in, welcome, home, settings, admin', async ({ page }, info) => {
   const key = (await page.locator('code').first().innerText()).trim()
   await shot(page, info, 'MS-8', 'admin-key')
   await page.goto('/admin?tab=members')
+  // The shared e2e database holds more people than one page; search like a teacher would.
+  await page.getByLabel('搜尋名稱或 Email').fill(email(`teacher-${tag}`))
   await expect(page.getByText(email(`teacher-${tag}`))).toBeVisible()
   await shot(page, info, 'MS-43', 'members')
 

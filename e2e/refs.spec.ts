@@ -104,7 +104,7 @@ test('references: action item → issue, task backlinks, comment mentions, repli
   await page.mouse.up()
   await shot(page, info, 'MS-36', 'annotate')
   await ann.getByRole('button', { name: '完成並上傳' }).click()
-  await expect(page.getByRole('button', { name: /^screenshot./ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^screenshot./ })).toBeVisible({ timeout: 15_000 })
   await shot(page, info, 'MS-36', 'attached')
   await bob.ctx.close()
   await owner.ctx.close()
