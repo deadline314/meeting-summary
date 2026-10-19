@@ -42,6 +42,8 @@ type Detail = {
 
 export function IssuePage({ projectKey, issueRef }: { projectKey: string; issueRef: string }) {
   const q = useQuery({ queryKey: ['issue', issueRef], queryFn: () => api<Detail>(`/api/issues/${issueRef}`), refetchInterval: 20_000 })
+  // Remember it right away (even before it loads) so going back selects it in the list.
+  useEffect(() => rememberLast(issueRef), [issueRef])
   if (q.isPending)
     return (
       <div className="flex flex-col gap-4 p-6">
@@ -63,7 +65,6 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
   const [base, setBase] = useState<number | null>(d.issue.version)
   const mobile = useIsMobile()
   const nav = useMemo(() => readNav(), [])
-  useEffect(() => rememberLast(issueRef), [issueRef])
   const idx = nav?.refs.indexOf(issueRef) ?? -1
   const go = (d: number) => {
     const r = nav?.refs[idx + d]
