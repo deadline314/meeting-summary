@@ -11,12 +11,14 @@ import { Field, Input, Textarea } from '../../ui/field'
 import { Skeleton } from '../../ui/misc'
 import { toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
+import { useTour } from '../../app/tour'
 import { CreateIssueHost, openCreateIssue } from './create-issue'
 import { DuplicateIssueHost } from './duplicate-issue'
 import { useProjects, type ProjectRow } from './model'
 import { SavedViewsNav } from './saved-views'
 
 export function ProjectsLayout() {
+  useTour('projects')
   const [creating, setCreating] = useState(false)
   const navigate = useNavigate()
   useActions([
@@ -61,7 +63,7 @@ export function ProjectNav({ onNew }: { onNew(): void }) {
     </Link>
   )
   return (
-    <nav className="flex flex-col gap-0.5 p-3">
+    <nav data-tour="pm-nav" className="flex flex-col gap-0.5 p-3">
       {item('/projects', <Inbox />, t('pm.myIssues'), path === '/projects')}
       {item('/projects/timeline', <CalendarRange />, t('tl.overview'), path === '/projects/timeline')}
       <SavedViewsNav />

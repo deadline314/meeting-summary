@@ -20,6 +20,7 @@ const prefs = z.object({
   accent: z.enum(['indigo', 'emerald', 'amber', 'rose', 'slate']).optional(),
   mode: z.enum(['light', 'dark', 'system']).optional(),
   notifyOff: z.array(z.string().max(80)).max(4000).optional(),
+  toursSeen: z.array(z.enum(['notes', 'tasks', 'projects'])).max(10).optional(),
 })
 
 // Public: what the login page needs.

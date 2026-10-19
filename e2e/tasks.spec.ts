@@ -3,7 +3,7 @@ import { cast, email, isMobile, newUserPage, shot } from './helpers'
 
 async function becomeTeacher(page: Page, who: string, name: string) {
   await page.request.post('/auth/dev', { data: { email: email(who), name } })
-  await page.request.patch('/api/me', { data: { onboarded: true } })
+  await page.request.patch('/api/me', { data: { onboarded: true, prefs: { toursSeen: ['notes', 'tasks', 'projects'] } } })
   const owner = await page.context().browser()!.newContext({ baseURL: 'http://localhost:5174' })
   await owner.request.post('/auth/dev', { data: { email: 'teacher@example.com', name: '系統老師' } })
   const id = (await (await page.request.get('/api/me')).json()).user.id

@@ -88,7 +88,7 @@ test('sign-in, welcome, home, settings, admin', async ({ page }, info) => {
   const ctx = await page.context().browser()!.newContext({ ...info.project.use, baseURL: 'http://localhost:5174' })
   const s = await ctx.newPage()
   await s.request.post('/auth/dev', { data: { email: email(`ta-${tag}`), name: '學長' } })
-  await s.request.patch('/api/me', { data: { onboarded: true } })
+  await s.request.patch('/api/me', { data: { onboarded: true, prefs: { toursSeen: ['notes', 'tasks', 'projects'] } } })
   await s.goto('/settings?tab=admin')
   await s.getByLabel('輸入金鑰').fill(key)
   await s.getByRole('button', { name: '升級' }).click()
@@ -105,7 +105,7 @@ test('sign-in, welcome, home, settings, admin', async ({ page }, info) => {
 test('API keys: create, copy one-line MCP command, use it, revoke', async ({ page }, info) => {
   const tag = info.project.name
   await page.request.post('/auth/dev', { data: { email: email(`keys-${tag}`), name: '金鑰測試' } })
-  await page.request.patch('/api/me', { data: { onboarded: true } })
+  await page.request.patch('/api/me', { data: { onboarded: true, prefs: { toursSeen: ['notes', 'tasks', 'projects'] } } })
   await page.goto('/settings?tab=api')
   await page.getByRole('button', { name: '產生 API Key' }).click()
   await page.getByLabel('名稱').fill('我的筆電 Claude Code')

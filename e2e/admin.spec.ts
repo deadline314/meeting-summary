@@ -14,7 +14,7 @@ test('admin: activity filters and CSV, member page, usage, site settings', async
   const [studentName, teacherName] = CAST[tag]!
   // Teacher = an owner promoted by the deployment owner.
   await page.request.post('/auth/dev', { data: { email: email(`adm-t-${tag}`), name: teacherName } })
-  await page.request.patch('/api/me', { data: { onboarded: true } })
+  await page.request.patch('/api/me', { data: { onboarded: true, prefs: { toursSeen: ['notes', 'tasks', 'projects'] } } })
   const teacherId = (await (await page.request.get('/api/me')).json()).user.id
   const owner = await newUserPage(browser, info, 'owner-root', '系統老師')
   await owner.page.request.post('/auth/dev', { data: { email: 'teacher@example.com', name: '系統老師' } })

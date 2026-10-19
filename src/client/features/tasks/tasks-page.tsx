@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useTour } from '../../app/tour'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { CalendarClock, CheckSquare, Plus } from 'lucide-react'
 import { motion } from 'motion/react'
@@ -14,6 +15,7 @@ import type { Task } from './model'
 import { SubmissionBadge } from './status'
 
 export function TasksPage() {
+  useTour('tasks')
   const { t } = useI18n()
   const me = useMe()
   const admin = isAdminRole(me.role)
@@ -42,7 +44,7 @@ export function TasksPage() {
         }
       />
       {q.isPending ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div data-tour="tasks-list" className="grid gap-3 sm:grid-cols-2">
           {Array.from({ length: 4 }, (_, i) => (
             <Skeleton key={i} className="h-32" />
           ))}

@@ -55,6 +55,7 @@ export function Segmented<const T extends string>({
   onChange,
   className,
   compact,
+  ...rest
 }: {
   options: { value: NoInfer<T>; label: string; icon?: ReactNode }[]
   value: T
@@ -62,10 +63,11 @@ export function Segmented<const T extends string>({
   className?: string
   /** Only the selected option shows its label; the others are icons with a tooltip. */
   compact?: boolean
+  'data-tour'?: string
 }) {
   const id = useId()
   return (
-    <div className={cx('inline-flex rounded-xl bg-surface-2 p-1', className)}>
+    <div {...rest} className={cx('inline-flex rounded-xl bg-surface-2 p-1', className)}>
       {options.map((o) => (
         <Tooltip key={o.value} label={compact && o.value !== value ? o.label : undefined}>
         <button

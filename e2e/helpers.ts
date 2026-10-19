@@ -11,7 +11,8 @@ export async function login(page: Page, who: string, name: string) {
 export async function signIn(req: APIRequestContext, who: string, name: string) {
   const r = await req.post('/auth/dev', { data: { email: email(who), name } })
   if (!r.ok()) throw new Error(`dev login failed: ${r.status()}`)
-  await req.patch('/api/me', { data: { onboarded: true } })
+  // Tours are tested on their own (tour.spec.ts); everywhere else they would cover the page.
+  await req.patch('/api/me', { data: { onboarded: true, prefs: { toursSeen: ['notes', 'tasks', 'projects'] } } })
   return (await (await req.get('/api/me')).json()).user as { id: string }
 }
 

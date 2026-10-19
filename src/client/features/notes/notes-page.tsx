@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useTour } from '../../app/tour'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { CalendarDays, ChevronLeft, ChevronRight, FileText, List, MapPin, MessageSquareWarning, Plus, Search } from 'lucide-react'
 import { motion } from 'motion/react'
@@ -44,6 +45,7 @@ type NoteRow = {
 const PAGE = 30
 
 export function NotesPage({ search, setSearch }: { search: NotesSearch; setSearch(s: Partial<NotesSearch>): void }) {
+  useTour('notes')
   const { t, locale } = useI18n()
   const navigate = useNavigate()
   const dir = useDirectory()
@@ -96,7 +98,7 @@ export function NotesPage({ search, setSearch }: { search: NotesSearch; setSearc
         title={t('notes.title')}
         subtitle={t('notes.subtitle')}
         actions={
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setSearch({ create: true })} title={t('notes.newHint')}>
+          <Button data-tour="notes-new" variant="primary" icon={<Plus className="size-4" />} onClick={() => setSearch({ create: true })} title={t('notes.newHint')}>
             {t('notes.new')}
           </Button>
         }
@@ -107,6 +109,7 @@ export function NotesPage({ search, setSearch }: { search: NotesSearch; setSearc
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('notes.searchPh')} aria-label={t('common.search')} className="pl-9" />
         </div>
         <Segmented
+          data-tour="notes-view"
           value={view}
           onChange={(v) => setSearch({ view: v === 'list' ? undefined : v })}
           options={[
@@ -115,7 +118,7 @@ export function NotesPage({ search, setSearch }: { search: NotesSearch; setSearc
           ]}
         />
       </div>
-      <div className="mb-5 flex flex-wrap items-center gap-2 text-sm">
+      <div data-tour="notes-filters" className="mb-5 flex flex-wrap items-center gap-2 text-sm">
         {view === 'list' && (
           <>
             <Input type="date" value={search.from ?? ''} onChange={(e) => setSearch({ from: e.target.value || undefined, page: undefined })} aria-label={t('notes.filter.from')} className="w-auto" />

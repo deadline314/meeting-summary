@@ -17,6 +17,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { SITE_ICONS } from '../features/admin/site-settings'
 import { AnnotateHost } from '../features/files/annotate'
+import { TourHost } from './tour'
 import { api } from '../lib/api'
 import { useOnline } from '../lib/hooks'
 import { useT, type MsgKey } from '../lib/i18n'
@@ -76,6 +77,7 @@ export function AppShell() {
       <PrefsSync />
       <CommandPalette />
       <AnnotateHost />
+      <TourHost />
       <ShortcutHelp />
       {/* Desktop sidebar */}
       <motion.aside
@@ -96,6 +98,7 @@ export function AppShell() {
           <Tooltip label={collapsed ? t('nav.commandHint') : undefined} shortcut="mod+k" side="right">
             <button
               onClick={openPalette}
+              data-tour="palette"
               aria-label={t('nav.commandHint')}
               className="flex h-9 w-full items-center gap-2 rounded-xl border border-line bg-canvas px-2.5 text-[13px] text-fg-4 transition-colors hover:border-line-strong hover:text-fg-3"
             >
@@ -156,7 +159,7 @@ export function AppShell() {
             <Logo />
             <span className="text-[15px] font-bold tracking-tight">{siteName}</span>
           </div>
-          <IconButton label={t('nav.commandHint')} icon={<Search />} onClick={openPalette} />
+          <IconButton label={t('nav.commandHint')} icon={<Search />} onClick={openPalette} data-tour="palette" />
           <NotificationBell />
           <AccountMenu collapsed />
         </header>

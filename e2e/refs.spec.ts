@@ -47,7 +47,7 @@ test('references: action item → issue, task backlinks, comment mentions, repli
   expect(issue.assigneeIds).toEqual([me.id])
   expect(issue.dueAt).toBeTruthy()
   // The task page lists the note that mentions it (the task is still a draft, so the teacher looks).
-  await owner.page.request.patch('/api/me', { data: { onboarded: true } })
+  await owner.page.request.patch('/api/me', { data: { onboarded: true, prefs: { toursSeen: ['notes', 'tasks', 'projects'] } } })
   await owner.page.goto(`/tasks/${task.id}?tab=overview`)
   await expect(owner.page.getByText('被這些會議紀錄提及')).toBeVisible()
   await expect(owner.page.getByRole('link', { name: new RegExp(`${key} 週會`) })).toBeVisible()

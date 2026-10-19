@@ -61,6 +61,7 @@ function Toolbar({
     <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
       {showView && (
         <Segmented
+          data-tour="pm-views"
           compact
           value={search.view ?? 'list'}
           onChange={(v) => setSearch({ view: v === 'list' ? undefined : v })}
@@ -184,7 +185,7 @@ export function MyIssuesPage({ search, setSearch }: { search: ProjectSearch; set
           <p className="text-xs text-fg-4">{t('pm.myIssuesHint')}</p>
         </div>
         <SaveViewButton />
-        <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => openCreateIssue()} disabled={!projects.data?.some((p) => canWrite(p.role) && p.state === 'active')} title="C">
+        <Button data-tour="pm-new" variant="primary" icon={<Plus className="size-4" />} onClick={() => openCreateIssue()} disabled={!projects.data?.some((p) => canWrite(p.role) && p.state === 'active')} title="C">
           {t('pm.new')}
         </Button>
       </div>
@@ -243,7 +244,7 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
         <SaveViewButton />
         <IconButton label={t('pm.settings')} icon={<Settings2 />} variant="secondary" onClick={() => setSearch({ settings: 'general' })} />
         {writable && (
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => openCreateIssue({ projectKey: p.key })} title="C">
+          <Button data-tour="pm-new" variant="primary" icon={<Plus className="size-4" />} onClick={() => openCreateIssue({ projectKey: p.key })} title="C">
             {t('pm.new')}
           </Button>
         )}

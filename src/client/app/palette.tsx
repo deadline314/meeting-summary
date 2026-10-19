@@ -5,7 +5,9 @@ import { useMemo, useState, useSyncExternalStore } from 'react'
 import { allActions, useActionsVersion, useScope, type Action } from '../lib/actions'
 import { api } from '../lib/api'
 import { useDebounced } from '../lib/hooks'
-import { useT } from '../lib/i18n'
+import { useT, type MsgKey } from '../lib/i18n'
+import { Button } from '../ui/button'
+import { startTour } from './tour'
 import { cx } from '../ui/cx'
 import { Dialog } from '../ui/dialog'
 import { Kbd } from '../ui/misc'
@@ -178,6 +180,25 @@ export function ShortcutHelp() {
       }}
       title={t('shortcuts.title')}
       description={t('shortcuts.hint')}
+      footer={
+        <div className="flex w-full flex-wrap items-center gap-2">
+          <span className="text-xs text-fg-4">{t('tour.replay')}</span>
+          {(['notes', 'tasks', 'projects'] as const).map((id) => (
+            <Button
+              key={id}
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                helpOpen = false
+                helpListeners.forEach((l) => l())
+                startTour(id)
+              }}
+            >
+              {t(`tour.name.${id}` as MsgKey)}
+            </Button>
+          ))}
+        </div>
+      }
     >
       <div className="grid gap-5 sm:grid-cols-2">
         {[...groups].map(([g, list]) => (

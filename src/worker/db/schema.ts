@@ -16,7 +16,7 @@ export const users = sqliteTable(
     avatarUrl: text('avatar_url'),
     role: text('role', { enum: ['student', 'admin', 'owner'] }).notNull().default('student'),
     status: text('status', { enum: ['active', 'disabled', 'removed'] }).notNull().default('active'),
-    prefs: json<{ locale?: string; accent?: string; mode?: string; notifyOff?: string[] }>('prefs').notNull().default({}),
+    prefs: json<{ locale?: string; accent?: string; mode?: string; notifyOff?: string[]; toursSeen?: string[] }>('prefs').notNull().default({}),
     onboardedAt: ts('onboarded_at'),
     createdAt: ts('created_at').notNull(),
     lastSeenAt: ts('last_seen_at'),
