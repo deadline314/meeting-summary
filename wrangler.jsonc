@@ -13,22 +13,20 @@
     {
       "binding": "DB",
       "database_name": "meeting-summary",
-      // Replace with the id printed by `wrangler d1 create meeting-summary` before deploying.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "13e63aec-d5c3-4ece-80a5-65902648a185",
       "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "meeting-summary-files" }],
   "durable_objects": { "bindings": [{ "name": "DOC_ROOM", "class_name": "DocRoom" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DocRoom"] }],
-  "triggers": { "crons": ["*/5 * * * *"] },
   "vars": {
     "APP_VERSION": "0.1.0",
-    "OWNER_EMAILS": "",
-    "GOOGLE_CLIENT_ID": "",
+    // OWNER_EMAILS, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GITHUB_TOKEN are Worker secrets
+    // (`wrangler secret put`) so emails stay out of this public repo.
     "GITHUB_REPO": "deadline314/meeting-summary",
     "GRADER_MODE": "github",
     // Public origin of the site, sent to the grading workflow so it knows where to report.
-    "SITE_URL": ""
+    "SITE_URL": "https://meeting-summary.stanley890314.workers.dev"
   }
 }

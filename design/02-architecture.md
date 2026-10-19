@@ -14,7 +14,7 @@ GitHub Actions 回報 ───┤
              ├─ /api/*   REST（給網頁）
              ├─ /mcp     MCP（給外部 AI）
              ├─ /ws/doc/:id → Durable Object「DocRoom」（每份會議紀錄一個，即時協作）
-             └─ Cron Trigger（清理過期 session、補救卡住的評測）
+             └─ 定期清理（過期 session、補救卡住的評測；有請求時每 5 分鐘最多跑一次，免費帳號 cron 額度已滿）
                        │
          ┌─────────────┼──────────────┐
          ▼             ▼              ▼
@@ -86,7 +86,7 @@ GitHub Actions（單一 job，permissions 只有 id-token: write）
   3. 評測輸出 result.json 與執行紀錄寫在 runner 暫存檔，不印到 log、不上傳 artifact
   4. 帶 OIDC token 把結果 POST 回 Worker
 Worker 驗 OIDC（發行者、repo、workflow、工作 id 與 run 對得上）→ 寫入結果、通知學生
-Cron：超過時限仍未回報的工作標為「逾時」並寫明原因
+定期清理：超過時限仍未回報的工作標為「逾時」並寫明原因
 ```
 
 - 學生程式跑在沒有秘密、沒有網路的 container，無法偽造結果，也無法把資料送出去。

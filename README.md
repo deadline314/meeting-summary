@@ -30,9 +30,11 @@ npm run dev
 1. `npx wrangler login`
 2. `npx wrangler d1 create meeting-summary`，把印出的 `database_id` 填進 `wrangler.jsonc`
 3. `npx wrangler r2 bucket create meeting-summary-files`
-4. 在 `wrangler.jsonc` 的 `vars` 填 `OWNER_EMAILS`、`GOOGLE_CLIENT_ID`
-5. 設定秘密：`npx wrangler secret put GOOGLE_CLIENT_SECRET`、`npx wrangler secret put GITHUB_TOKEN`
-6. `npm run deploy`
+4. 在 `wrangler.jsonc` 的 `vars` 把 `SITE_URL` 改成你的網址
+5. `npm run deploy`
+6. 設定秘密（不進公開 repo）：`npx wrangler secret put OWNER_EMAILS`、`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GITHUB_TOKEN`
+
+免費帳號每個帳號只有 5 個 cron，所以清理過期 session、補救卡住評測改成「有請求進來時每 5 分鐘最多跑一次」，不需要 cron。
 
 之後 push 到 main 會由 CI 自動部署（需在 repo secrets 設 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`）。要每個 PR 都有預覽網址，在 Cloudflare 後台把這個 Worker 連到 GitHub（Workers Builds，免費）。
 
