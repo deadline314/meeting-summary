@@ -10,3 +10,6 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 # Optional: fine-grained token with actions:write on GITHUB_REPO, for GRADER_MODE=github
 GITHUB_TOKEN=
+
+# Shared secret for the local grading runner (scripts/grade.mjs --local).
+LOCAL_RUNNER_TOKEN=dev-runner-token

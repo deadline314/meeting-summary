@@ -9,6 +9,8 @@ import {
   Columns2,
   Copy,
   Eye,
+  FileArchive,
+  FileCode,
   Heading2,
   History,
   ImagePlus,
@@ -46,7 +48,7 @@ import { Button, IconButton } from '../../ui/button'
 import { cx } from '../../ui/cx'
 import { Dialog, confirm } from '../../ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '../../ui/menu'
-import { EmptyState, Skeleton } from '../../ui/misc'
+import { EmptyState, Skeleton, Spinner } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
 import { toast, toastError } from '../../ui/toast'
 import { Tooltip } from '../../ui/tooltip'
@@ -54,6 +56,7 @@ import { FilesPanel } from '../files/files-panel'
 import { authorRuns, b64ToAbs, relPosToB64, useAuthorsMap, useCollab, usePeers, useStatus, useText } from './collab'
 import { CommentsPanel, type Draft, type NoteComment, type Thread } from './comments'
 import { Editor, type EditorHandle, type FormatKind } from './editor'
+import { exportHtml, exportName, exportZip } from './export'
 import { HistoryPanel, VersionDialog } from './history'
 import { NoteFormDialog, type NoteFields } from './note-form'
 import { Preview, type CommentRange } from './preview'
@@ -489,6 +492,22 @@ function NoteHeader({
   const { t, fmt, locale } = useI18n()
   const me = useMe()
   const isUrl = /^https?:\/\//.test(note.location)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const runExport = async (kind: 'zip' | 'html') => {
+    const strings = { attachments: t('export.attachments'), missing: t('export.missing'), source: t('export.source') }
+    const base = exportName(note.title, note.startsAt)
+    setProgress({ done: 0, total: 1 })
+    const onProgress = (done: number, total: number) => setProgress({ done, total })
+    try {
+      if (kind === 'zip') await exportZip(note.id, base, locale, strings, onProgress)
+      else await exportHtml(note.id, base, locale, note.title, strings, onProgress)
+      toast(t('export.done'))
+    } catch (err) {
+      toastError(err)
+    } finally {
+      setProgress(null)
+    }
+  }
   const end = note.endsAt ? fmt.time(note.endsAt) : null
   return (
     <div className="border-b border-line px-4 pt-4 pb-3 md:px-5">
@@ -534,7 +553,13 @@ function NoteHeader({
               {status === 'connected' ? <Wifi className="size-4" /> : <WifiOff className="size-4 animate-pulse" />}
             </span>
           </Tooltip>
-          {peers.length > 0 && (
+          {progress && (
+            <span className="flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-text" aria-live="polite">
+              <Spinner className="size-3.5 text-accent-text" />
+              {t('export.progress', progress)}
+            </span>
+          )}
+                    {peers.length > 0 && (
             <Tooltip label={t('notes.online', { n: peers.length })}>
               <span className="hidden sm:flex">
                 <AvatarStack ids={peers} max={4} size="sm" />
@@ -551,6 +576,12 @@ function NoteHeader({
                   {t('notes.editMeta')}
                 </MenuItem>
               )}
+              <MenuItem icon={<FileArchive />} onSelect={() => runExport('zip')}>
+                {t('export.zip')}
+              </MenuItem>
+              <MenuItem icon={<FileCode />} onSelect={() => runExport('html')}>
+                {t('export.html')}
+              </MenuItem>
               <MenuItem
                 icon={<Copy />}
                 onSelect={async () => {

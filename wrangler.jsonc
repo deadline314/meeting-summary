@@ -27,6 +27,8 @@
     "OWNER_EMAILS": "",
     "GOOGLE_CLIENT_ID": "",
     "GITHUB_REPO": "deadline314/meeting-summary",
-    "GRADER_MODE": "github"
+    "GRADER_MODE": "github",
+    // Public origin of the site, sent to the grading workflow so it knows where to report.
+    "SITE_URL": ""
   }
 }

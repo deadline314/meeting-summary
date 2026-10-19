@@ -3,7 +3,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, sep } from 'node:path'
 
 const ROOT = 'src/client'
-const ALLOW = new Set(['src/client/styles.css'])
+// Token file, and the stylesheet of exported standalone HTML (a separate document, not app UI).
+const ALLOW = new Set(['src/client/styles.css', 'src/client/features/notes/export.css'])
 const LITERAL = /#[0-9a-fA-F]{3,8}\b(?![\w-])|\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\(/
 const PALETTE = /\b(?:bg|text|border|ring|fill|stroke|from|to|via|outline|shadow)-(?:red|blue|green|yellow|gray|slate|zinc|neutral|stone|orange|amber|lime|emerald|teal|cyan|sky|indigo|violet|purple|fuchsia|pink|rose|black)-\d{2,3}\b/
 

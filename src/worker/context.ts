@@ -15,6 +15,8 @@ export type Ctx = {
   user: User
   source: Source
   requestId: string
+  /** Public origin of this request (for links handed to external runners). */
+  origin: string
   apiKey?: ApiKeyGrant
   waitUntil(p: Promise<unknown>): void
 }
@@ -34,6 +36,7 @@ export function ctxOf(c: C, source: Source = 'web'): Ctx {
     user,
     source: c.get('apiKey') ? 'mcp' : source,
     requestId: c.get('requestId'),
+    origin: new URL(c.req.url).origin,
     apiKey: c.get('apiKey'),
     waitUntil: (p) => c.executionCtx.waitUntil(p),
   }

@@ -1,0 +1,21 @@
+/* Stylesheet embedded in exported HTML files: standalone, light/dark aware, print-friendly. */
+:root { color-scheme: light dark; --bg: #ffffff; --fg: #1f2330; --muted: #5b6172; --line: #e3e5ec; --soft: #f4f5f8; --accent: #4f46e5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #15171e; --fg: #eceef4; --muted: #a3a8b8; --line: #2c303b; --soft: #1d2029; --accent: #8b85ff; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.75 ui-sans-serif, -apple-system, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; }
+h1 { font-size: 1.7rem; margin: 0 0 1rem; }
+h2 { font-size: 1.25rem; margin: 2rem 0 .75rem; padding-bottom: .3rem; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+a { color: var(--accent); }
+table { width: 100%; border-collapse: collapse; margin: .75rem 0; font-size: .92em; }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--soft); }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .88em; background: var(--soft); padding: .1em .35em; border-radius: 5px; }
+pre { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: .9em 1em; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+blockquote { margin: 0; border-left: 3px solid var(--line); padding-left: 1em; color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+footer { margin-top: 3rem; color: var(--muted); font-size: .8rem; }
+@media print { body { background: #fff; color: #000; } main { padding: 0; max-width: none; } a { color: #000; } img, table, pre { break-inside: avoid; } }

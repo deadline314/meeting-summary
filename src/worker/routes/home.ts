@@ -5,6 +5,7 @@ import type { AppEnv, Ctx } from '../context'
 import { ctxOf, parse } from '../context'
 import { notes } from '../db/schema'
 import { visibleProjectIds } from '../services/projects'
+import { notFound } from '../lib/errors'
 
 export const homeRoutes = new Hono<AppEnv>()
 
@@ -49,6 +50,18 @@ export const slices: Slice[] = [
     },
   },
 ]
+
+type RefInfo = { title: string; href: string; status?: string; ref?: string; best?: { status: string; score: number | null } | null }
+
+/** Resolves `#[type:id]` references for pills; throwing (404) hides the target entirely. */
+export const refResolvers: Record<string, (ctx: Ctx, id: string) => Promise<RefInfo>> = {}
+
+homeRoutes.get('/refs/:type/:id', async (c) => {
+  const ctx = ctxOf(c)
+  const resolve = refResolvers[c.req.param('type')]
+  if (!resolve) throw notFound()
+  return c.json(await resolve(ctx, c.req.param('id')))
+})
 
 homeRoutes.get('/home', async (c) => {
   const ctx = ctxOf(c)

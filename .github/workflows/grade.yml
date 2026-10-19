@@ -1,0 +1,42 @@
+name: grade
+
+# Started by the platform (workflow_dispatch) for each submission. Inputs and logs of this
+# public repo are visible to anyone, so inputs carry only a job id and the site URL; the
+# runner fetches everything else with a GitHub OIDC token and never prints student data.
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Submission id
+        required: true
+        type: string
+      site:
+        description: Platform origin to report to
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: grade-${{ inputs.job }}
+  cancel-in-progress: false
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/grade.mjs
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Grade
+        run: node scripts/grade.mjs --job "$JOB" --site "$SITE"
+        env:
+          JOB: ${{ inputs.job }}
+          SITE: ${{ inputs.site }}

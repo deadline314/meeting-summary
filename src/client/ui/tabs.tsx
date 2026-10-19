@@ -3,15 +3,15 @@ import { useId, type ReactNode } from 'react'
 import { cx } from './cx'
 
 /** Underlined tab bar with a sliding indicator. Controlled, so callers can keep the tab in the URL. */
-export function TabBar<T extends string>({
+export function TabBar<const T extends string>({
   tabs,
   value,
   onChange,
   className,
 }: {
-  tabs: { value: T; label: ReactNode; icon?: ReactNode; badge?: ReactNode }[]
+  tabs: { value: NoInfer<T>; label: ReactNode; icon?: ReactNode; badge?: ReactNode }[]
   value: T
-  onChange(v: T): void
+  onChange(v: NoInfer<T>): void
   className?: string
 }) {
   const id = useId()
@@ -48,15 +48,15 @@ export function TabBar<T extends string>({
 }
 
 /** Pill-style segmented control for 2–4 options. */
-export function Segmented<T extends string>({
+export function Segmented<const T extends string>({
   options,
   value,
   onChange,
   className,
 }: {
-  options: { value: T; label: ReactNode; icon?: ReactNode }[]
+  options: { value: NoInfer<T>; label: ReactNode; icon?: ReactNode }[]
   value: T
-  onChange(v: T): void
+  onChange(v: NoInfer<T>): void
   className?: string
 }) {
   const id = useId()

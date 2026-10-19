@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import { cast, isMobile, login, newUserPage, shot } from './helpers'
 
 test('meeting notes: create, collaborate, authors, comment', async ({ page, browser }, info) => {
@@ -92,6 +95,34 @@ test('meeting notes: create, collaborate, authors, comment', async ({ page, brow
   await shot(page, info, 'MS-18', 'code-preview')
   await page.keyboard.press('Escape')
 
+  // One-click export: ZIP (Markdown + images + attachments) and a self-contained HTML.
+  await page.goto(noteUrl + '?mode=preview')
+  await page.getByRole('button', { name: '編輯' }).first().click()
+  await shot(page, info, 'MS-46', 'menu')
+  const zipDl = page.waitForEvent('download')
+  await page.getByRole('menuitem', { name: /匯出 ZIP/ }).click()
+  const zip = await zipDl
+  expect(zip.suggestedFilename()).toMatch(/^\d{4}-\d{2}-\d{2}_週會 .+\.zip$/)
+  const zipPath = test.info().outputPath('note.zip')
+  await zip.saveAs(zipPath)
+  const listing = execFileSync('python', ['e2e/fixtures/zip_check.py', zipPath], { encoding: 'utf8', env: { ...process.env, PYTHONUTF8: '1' } })
+  expect(listing).toContain('images/chart.webp')
+  expect(listing).toContain('attachments/train.py')
+  expect(listing).toContain('MD_LINK_OK')
+  const htmlDl = page.waitForEvent('download')
+  await page.getByRole('button', { name: '編輯' }).first().click()
+  await page.getByRole('menuitem', { name: /匯出 HTML/ }).click()
+  const htmlPath = test.info().outputPath('note.html')
+  await (await htmlDl).saveAs(htmlPath)
+  const html = readFileSync(htmlPath, 'utf8')
+  expect(html).toContain('src="data:image/webp;base64,')
+  expect(html).toContain('Bob 的補充說明')
+  const offline = await browser.newPage({ ...info.project.use })
+  await offline.goto(pathToFileURL(htmlPath).href)
+  await offline.locator('img').first().scrollIntoViewIfNeeded()
+  await shot(offline, info, 'MS-46', 'html-offline')
+  await offline.close()
+
   // List + calendar.
   await page.goto('/notes')
   await expect(page.getByText(`週會 ${tag}`)).toBeVisible()
@@ -100,3 +131,4 @@ test('meeting notes: create, collaborate, authors, comment', async ({ page, brow
   await page.locator(`[data-day="${new Date().getDate()}"]`).click()
   await shot(page, info, 'MS-20', 'calendar')
 })
+

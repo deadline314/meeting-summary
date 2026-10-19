@@ -2,6 +2,8 @@ import { createRoute, type AnyRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { NotePage } from '../features/notes/note-page'
 import { NotesPage } from '../features/notes/notes-page'
+import { TaskPage } from '../features/tasks/task-page'
+import { TasksPage } from '../features/tasks/tasks-page'
 
 const bool = z.coerce.boolean().optional()
 
@@ -48,5 +50,19 @@ export function appRoutes(parent: AnyRoute) {
     },
   })
 
-  return [notes, note]
+  const tasks = createRoute({ getParentRoute: () => parent, path: '/tasks', component: TasksPage })
+
+  const task = createRoute({
+    getParentRoute: () => parent,
+    path: '/tasks/$id',
+    validateSearch: z.object({ tab: z.enum(['overview', 'submit', 'leaderboard', 'manage', 'settings']).optional() }),
+    component: function Task() {
+      const { id } = task.useParams()
+      const { tab } = task.useSearch()
+      const navigate = task.useNavigate()
+      return <TaskPage key={id} id={id} tab={tab} onTab={(t) => navigate({ search: { tab: t }, replace: true })} />
+    },
+  })
+
+  return [notes, note, tasks, task]
 }

@@ -3,6 +3,9 @@ import { notifications } from '../db/schema'
 import { newId } from '../lib/crypto'
 import { errorFields, log } from '../lib/log'
 
+/** Actor id for notifications the platform sends on its own (e.g. grading results). */
+export const SYSTEM_ACTOR = 'system'
+
 export type Notice = {
   type: string
   entityType: string
@@ -23,7 +26,7 @@ export function notify(ctx: Ctx, recipients: Iterable<string>, n: Notice) {
       to.map((userId) =>
         ctx.db
           .insert(notifications)
-          .values({ id: newId(), userId, actorId: ctx.user.id, type: n.type, entityType: n.entityType, entityId: n.entityId, data: n.data ?? {}, createdAt: now })
+          .values({ id: newId(), userId, actorId: ctx.user.id === SYSTEM_ACTOR ? null : ctx.user.id, type: n.type, entityType: n.entityType, entityId: n.entityId, data: n.data ?? {}, createdAt: now })
           .run()
           .catch((err) => log('warn', 'notification failed', { userId, type: n.type, ...errorFields(err) })),
       ),

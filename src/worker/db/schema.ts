@@ -104,7 +104,7 @@ export const files = sqliteTable(
     mime: text('mime').notNull(),
     size: integer('size').notNull(),
     kind: text('kind', { enum: ['image', 'file', 'drive'] }).notNull(),
-    parentType: text('parent_type', { enum: ['note', 'issue', 'task', 'submission', 'avatar'] }).notNull(),
+    parentType: text('parent_type', { enum: ['note', 'issue', 'task', 'task_asset', 'submission', 'avatar'] }).notNull(),
     parentId: text('parent_id').notNull(),
     driveUrl: text('drive_url'),
     status: text('status', { enum: ['pending', 'ready'] }).notNull().default('pending'),

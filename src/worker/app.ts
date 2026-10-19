@@ -13,6 +13,8 @@ import { fileRoutes, rawFileRoute } from './routes/files'
 import { homeRoutes } from './routes/home'
 import { meRoutes } from './routes/me'
 import { noteRoutes, noteSocket } from './routes/notes'
+import { graderRoutes, taskRoutes } from './routes/tasks'
+import { sweepStuckJobs } from './services/grader'
 import { SESSION_COOKIE, SESSION_TTL_MS, resolveSession } from './services/auth'
 
 export const app = new Hono<AppEnv>()
@@ -79,6 +81,8 @@ app.route('/api/admin', adminRoutes)
 app.route('/api', homeRoutes)
 app.route('/api', noteRoutes)
 app.route('/api', fileRoutes)
+app.route('/api', taskRoutes)
+app.route('/api/grader', graderRoutes)
 app.route('/files', rawFileRoute)
 app.get('/ws/doc/:id', noteSocket)
 
@@ -99,8 +103,9 @@ app.onError((err, c) => {
   return c.json(body, 500)
 })
 
-export async function scheduled(env: Env) {
+export async function scheduled(env: Env, waitUntil: (p: Promise<unknown>) => void) {
   const db = getDb(env.DB)
+  await sweepStuckJobs(env, waitUntil)
   await db.delete(sessions).where(lt(sessions.expiresAt, Date.now()))
   await db.run(sql`delete from rate_limits where reset_at < ${Date.now()}`)
 }

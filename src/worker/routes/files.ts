@@ -7,7 +7,7 @@ import { deleteFile, getFile, linkDriveFile, listFiles, readFileText, serveFile,
 
 export const fileRoutes = new Hono<AppEnv>()
 
-const parentType = z.enum(['note', 'issue', 'task', 'submission', 'avatar'])
+const parentType = z.enum(['note', 'issue', 'task', 'task_asset', 'avatar'])
 
 fileRoutes.get('/files', async (c) => {
   const q = parse(z.object({ parentType, parentId: z.string() }), c.req.query())
