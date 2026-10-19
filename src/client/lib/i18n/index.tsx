@@ -39,12 +39,16 @@ function makeFormatters(locale: Locale) {
     hour12: locale === 'en',
   })
   const time = new Intl.DateTimeFormat(il, { hour: '2-digit', minute: '2-digit', hour12: locale === 'en' })
+  const day = new Intl.DateTimeFormat(il, { month: 'numeric', day: 'numeric' })
+  const month = new Intl.DateTimeFormat(il, { year: 'numeric', month: 'short' })
   const rel = new Intl.RelativeTimeFormat(il, { numeric: 'auto', style: 'short' })
   const num = new Intl.NumberFormat(il)
   return {
     date: (ms: number) => date.format(ms),
     dateTime: (ms: number) => dateTime.format(ms),
     time: (ms: number) => time.format(ms),
+    day: (ms: number) => day.format(ms),
+    month: (ms: number) => month.format(ms),
     number: (n: number) => num.format(n),
     relative(ms: number) {
       const diff = (ms - Date.now()) / 1000

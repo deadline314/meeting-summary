@@ -144,4 +144,14 @@ describe('projects & issues', () => {
     const tl = (await a.call<{ items: { change?: { data: { copiedFrom?: string } } }[] }>(`/api/issues/${dup.body.ref}/timeline?kind=changes`)).body.items
     expect(tl[0]!.change!.data.copiedFrom).toBe(root.ref)
   })
+  it('timeline segments come from status changes', async () => {
+    const { a, k } = await setup()
+    const i = (await a.call<{ issue: Issue }>(`/api/projects/${k}/issues`, { method: 'POST', body: { title: 'tl' } })).body.issue
+    const v2 = (await a.call<{ issue: Issue }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: i.version, status: 'in_progress' } })).body.issue
+    await a.call(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: v2.version, status: 'done' } })
+    const tl = (await a.call<{ items: { ref: string; segments: { status: string; to: number | null }[] }[]; total: number }>(`/api/timeline?key=${k}`)).body
+    expect(tl.total).toBe(1)
+    expect(tl.items[0]!.segments.map((s) => s.status)).toEqual(['todo', 'in_progress', 'done'])
+    expect(tl.items[0]!.segments.every((s) => s.to !== null)).toBe(true)
+  })
 })

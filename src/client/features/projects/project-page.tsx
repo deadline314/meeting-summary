@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { FolderKanban, Inbox, Kanban, List, Plus, Search, Settings2, SlidersHorizontal } from 'lucide-react'
+import { CalendarRange, FolderKanban, Inbox, Kanban, List, Plus, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
 import { useDebounced, useIsMobile } from '../../lib/hooks'
@@ -14,8 +14,9 @@ import { PRIORITIES, canWrite, useLabels, useProject, useProjects } from './mode
 import { useAssigneeOptions } from './pickers'
 import { NewProjectDialog, VisibilityBadge } from './projects-layout'
 import { ProjectSettings, type SettingsTab } from './project-settings'
+import { IssueTimeline } from './timeline'
 
-export type ProjectSearch = Filters & { view?: 'list' | 'board'; settings?: SettingsTab }
+export type ProjectSearch = Filters & { view?: 'list' | 'board' | 'timeline'; settings?: SettingsTab }
 
 function Toolbar({
   search,
@@ -45,6 +46,7 @@ function Toolbar({
       ? [
           { id: 'pm-board', label: 'pm.goBoard' as MsgKey, keys: 'g b', group: 'nav.projects' as MsgKey, run: () => setSearch({ view: 'board' }) },
           { id: 'pm-list', label: 'pm.goList' as MsgKey, keys: 'g l', group: 'nav.projects' as MsgKey, run: () => setSearch({ view: undefined }) },
+          { id: 'pm-timeline', label: 'pm.goTimeline' as MsgKey, keys: 'g t', group: 'nav.projects' as MsgKey, run: () => setSearch({ view: 'timeline' }) },
         ]
       : []),
   ])
@@ -61,6 +63,7 @@ function Toolbar({
           options={[
             { value: 'list', label: t('pm.view.list'), icon: <List /> },
             { value: 'board', label: t('pm.view.board'), icon: <Kanban /> },
+            { value: 'timeline', label: t('pm.view.timeline'), icon: <CalendarRange /> },
           ]}
         />
       )}
@@ -225,6 +228,8 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
       <ViewProvider key={p.key} scope={{ key: p.key }} role={p.role} labels={labels.data ?? []} memberIds={p.members.map((m) => m.userId)}>
         {search.view === 'board' ? (
           <IssueBoard filters={filters} />
+        ) : search.view === 'timeline' ? (
+          <IssueTimeline scope={{ key: p.key }} filters={filters} />
         ) : (
           <IssueList
             filters={filters}
@@ -260,6 +265,28 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
         )}
       </ViewProvider>
       {search.settings && <ProjectSettings project={p} tab={search.settings} onTab={(s) => setSearch({ settings: s })} onClose={() => setSearch({ settings: undefined })} />}
+    </div>
+  )
+}
+
+/** G O: every visible project's issues on one chart. */
+export function TimelineOverviewPage({ search, setSearch }: { search: ProjectSearch; setSearch(s: Partial<ProjectSearch>): void }) {
+  const { t } = useI18n()
+  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, q: search.q }
+  return (
+    <div>
+      <MobileProjectPicker />
+      <div className="flex items-center gap-3 px-4 pt-5 pb-3 md:px-6">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-accent-soft text-accent-text">
+          <CalendarRange className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-bold tracking-tight md:text-xl">{t('tl.overview')}</h1>
+          <p className="text-xs text-fg-4">{t('tl.overviewHint')}</p>
+        </div>
+      </div>
+      <Toolbar search={search} setSearch={setSearch} showView={false} />
+      <IssueTimeline scope={{}} filters={filters} />
     </div>
   )
 }

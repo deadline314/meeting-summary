@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, Inbox, Lock, Plus, Users, UsersRound } from 'lucide-react'
+import { CalendarRange, ChevronDown, ChevronRight, Inbox, Lock, Plus, Users, UsersRound } from 'lucide-react'
 import { useState } from 'react'
 import { useActions } from '../../lib/actions'
 import { api, queryClient } from '../../lib/api'
@@ -17,7 +17,11 @@ import { useProjects, type ProjectRow } from './model'
 
 export function ProjectsLayout() {
   const [creating, setCreating] = useState(false)
-  useActions([{ id: 'pm-new-issue', label: 'create.title', keys: 'c', icon: <Plus />, group: 'group.create', run: () => openCreateIssue(currentKey()) }])
+  const navigate = useNavigate()
+  useActions([
+    { id: 'pm-new-issue', label: 'create.title', keys: 'c', icon: <Plus />, group: 'group.create', run: () => openCreateIssue(currentKey()) },
+    { id: 'pm-overview', label: 'tl.overview', keys: 'g o', icon: <CalendarRange />, group: 'nav.projects', run: () => navigate({ to: '/projects/timeline' }) },
+  ])
   return (
     <div className="flex min-h-[calc(100dvh-7.5rem)] md:min-h-dvh">
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface/50 lg:flex">
@@ -58,6 +62,7 @@ export function ProjectNav({ onNew }: { onNew(): void }) {
   return (
     <nav className="flex flex-col gap-0.5 p-3">
       {item('/projects', <Inbox />, t('pm.myIssues'), path === '/projects')}
+      {item('/projects/timeline', <CalendarRange />, t('tl.overview'), path === '/projects/timeline')}
       <div className="mt-4 mb-1 flex items-center justify-between px-2.5">
         <span className="text-[11px] font-semibold tracking-wide text-fg-4 uppercase">{t('pm.projects')}</span>
         <IconButton label={t('pm.newProject')} icon={<Plus />} size="sm" onClick={onNew} className="-mr-1.5 size-7" />

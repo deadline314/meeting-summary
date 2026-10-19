@@ -116,13 +116,12 @@ export type IssueFilter = {
 
 const PRIORITY_RANK = sql`case ${issues.priority} when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 when 'low' then 3 else 4 end`
 
-/** One status at a time, each with its own page — a status group never vanishes because of another's size. */
-export async function listIssues(ctx: Ctx, scope: { key?: string; mine?: boolean }, f: IssueFilter) {
-  let projectIds: string[]
-  if (scope.key) projectIds = [(await access(ctx, { key: scope.key })).project.id]
-  else projectIds = await visibleProjectIds(ctx)
-  if (!projectIds.length) return { items: [], total: 0 }
-  const where = and(
+async function scopeProjects(ctx: Ctx, scope: { key?: string; mine?: boolean }) {
+  return scope.key ? [(await access(ctx, { key: scope.key })).project.id] : visibleProjectIds(ctx)
+}
+
+function issueWhere(ctx: Ctx, projectIds: string[], scope: { mine?: boolean }, f: Omit<IssueFilter, 'offset' | 'limit'>) {
+  return and(
     inArray(issues.projectId, projectIds),
     isNull(issues.deletedAt),
     f.status ? eq(issues.status, f.status) : undefined,
@@ -133,6 +132,13 @@ export async function listIssues(ctx: Ctx, scope: { key?: string; mine?: boolean
     f.q ? or(like(issues.title, `%${f.q}%`), like(issues.description, `%${f.q}%`)) : undefined,
     f.doneSince && f.status && DONE.includes(f.status) ? gt(issues.statusChangedAt, f.doneSince) : undefined,
   )
+}
+
+/** One status at a time, each with its own page — a status group never vanishes because of another's size. */
+export async function listIssues(ctx: Ctx, scope: { key?: string; mine?: boolean }, f: IssueFilter) {
+  const projectIds = await scopeProjects(ctx, scope)
+  if (!projectIds.length) return { items: [], total: 0 }
+  const where = issueWhere(ctx, projectIds, scope, f)
   const order: SQL[] =
     f.sort === 'created'
       ? [desc(issues.createdAt)]
@@ -148,6 +154,69 @@ export async function listIssues(ctx: Ctx, scope: { key?: string; mine?: boolean
     ctx.db.select({ n: sql<number>`count(*)` }).from(issues).where(where).get(),
   ])
   return { items: await hydrate(ctx, rows, await keyMap(ctx, projectIds)), total: total?.n ?? 0 }
+}
+
+export const TIMELINE_MAX = 500
+export type Segment = { status: Status; from: number; to: number | null }
+
+/**
+ * Status segments per issue, derived from the "created" and status-change activities (nothing
+ * extra is stored). Issues whose history is missing or out of order fall back to one segment in
+ * their current status, so one bad row never breaks the chart.
+ */
+export async function issueTimeline(ctx: Ctx, scope: { key?: string }, f: Omit<IssueFilter, 'offset' | 'limit' | 'status' | 'sort' | 'doneSince'>) {
+  const projectIds = await scopeProjects(ctx, scope)
+  if (!projectIds.length) return { items: [], total: 0, projects: [] }
+  const where = issueWhere(ctx, projectIds, {}, f)
+  const [rows, total, projectRows] = await Promise.all([
+    ctx.db.select().from(issues).where(where).orderBy(asc(issues.createdAt)).limit(TIMELINE_MAX).all(),
+    ctx.db.select({ n: sql<number>`count(*)` }).from(issues).where(where).get(),
+    ctx.db.select({ id: projects.id, key: projects.key, name: projects.name, targetDate: projects.targetDate, state: projects.state }).from(projects).where(inArray(projects.id, projectIds)).all(),
+  ])
+  const keyOf = new Map(projectRows.map((p) => [p.id, p.key]))
+  const wanted = new Set(rows.map((r) => r.id))
+  const acts = rows.length
+    ? await ctx.db
+        .select({ entityId: activities.entityId, action: activities.action, data: activities.data, createdAt: activities.createdAt })
+        .from(activities)
+        .where(
+          and(
+            inArray(activities.projectId, projectIds),
+            eq(activities.entityType, 'issue'),
+            or(eq(activities.action, 'created'), sql`json_extract(${activities.data}, '$.field') = 'status'`),
+          ),
+        )
+        .orderBy(asc(activities.createdAt))
+        .all()
+    : []
+  const byIssue = new Map<string, typeof acts>()
+  for (const a of acts) if (wanted.has(a.entityId)) byIssue.set(a.entityId, [...(byIssue.get(a.entityId) ?? []), a])
+  const isStatus = (s: unknown): s is Status => typeof s === 'string' && (ISSUE_STATUSES as readonly string[]).includes(s)
+  const items = rows.map((r) => {
+    let segments: Segment[] = []
+    try {
+      const list = byIssue.get(r.id) ?? []
+      const created = list.find((a) => a.action === 'created')
+      const changes = list.filter((a) => a.action !== 'created')
+      const first = (created?.data as { status?: unknown } | undefined)?.status ?? (changes[0]?.data as { from?: unknown } | undefined)?.from
+      let cur: Segment = { status: isStatus(first) ? first : r.status, from: r.createdAt, to: null }
+      for (const c of changes) {
+        const to = (c.data as { to?: unknown }).to
+        if (!isStatus(to) || c.createdAt < cur.from) continue
+        segments.push({ ...cur, to: c.createdAt })
+        cur = { status: to, from: c.createdAt, to: null }
+      }
+      if (cur.status !== r.status) cur = { ...cur, status: r.status }
+      segments.push(cur)
+    } catch {
+      segments = [{ status: r.status, from: r.createdAt, to: null }]
+    }
+    // Finished issues stop at completion instead of running to today.
+    const last = segments[segments.length - 1]!
+    if (DONE.includes(last.status)) last.to = last.from
+    return { ref: `${keyOf.get(r.projectId)}-${r.number}`, title: r.title, status: r.status, priority: r.priority, dueAt: r.dueAt, projectKey: keyOf.get(r.projectId)!, createdAt: r.createdAt, segments }
+  })
+  return { items, total: total?.n ?? 0, projects: projectRows.map(({ id: _id, ...p }) => p) }
 }
 
 export async function statusCounts(ctx: Ctx, scope: { key?: string; mine?: boolean }, f: Omit<IssueFilter, 'status' | 'offset' | 'limit'>) {

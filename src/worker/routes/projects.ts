@@ -16,6 +16,7 @@ import {
   idempotent,
   issueDetail,
   duplicateIssue,
+  issueTimeline,
   listIssues,
   moveIssue,
   removeRelation,
@@ -142,6 +143,10 @@ projectRoutes.get('/projects/:key/issues', async (c) => c.json(await listIssues(
 projectRoutes.get('/projects/:key/counts', async (c) => {
   const { status: _s, offset: _o, limit: _l, ...f } = parse(filter, c.req.query())
   return c.json(await statusCounts(ctxOf(c), { key: c.req.param('key') }, f))
+})
+projectRoutes.get('/timeline', async (c) => {
+  const q = parse(filter.omit({ status: true, sort: true, offset: true, limit: true }).extend({ key: z.string().optional() }), c.req.query())
+  return c.json(await issueTimeline(ctxOf(c), { key: q.key }, q))
 })
 projectRoutes.get('/my-issues', async (c) => c.json(await listIssues(ctxOf(c), { mine: true }, parse(filter, c.req.query()))))
 projectRoutes.get('/my-issues/counts', async (c) => {

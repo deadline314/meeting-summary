@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { NotePage } from '../features/notes/note-page'
 import { NotesPage } from '../features/notes/notes-page'
 import { IssuePage } from '../features/projects/issue-page'
-import { MyIssuesPage, ProjectPage } from '../features/projects/project-page'
+import { MyIssuesPage, ProjectPage, TimelineOverviewPage } from '../features/projects/project-page'
 import { ProjectsLayout } from '../features/projects/projects-layout'
 import { TaskPage } from '../features/tasks/task-page'
 import { TasksPage } from '../features/tasks/tasks-page'
@@ -68,7 +68,7 @@ export function appRoutes(parent: AnyRoute) {
   })
 
   const pmSearch = z.object({
-    view: z.enum(['list', 'board']).optional(),
+    view: z.enum(['list', 'board', 'timeline']).optional(),
     assigneeId: z.string().optional(),
     priority: z.string().optional(),
     labelId: z.string().optional(),
@@ -98,6 +98,16 @@ export function appRoutes(parent: AnyRoute) {
       return <ProjectPage key={key} projectKey={key.toUpperCase()} search={search} setSearch={(s) => navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...s }), replace: true })} />
     },
   })
+  const overview = createRoute({
+    getParentRoute: () => projects,
+    path: 'timeline',
+    validateSearch: pmSearch,
+    component: function Overview() {
+      const search = overview.useSearch()
+      const navigate = overview.useNavigate()
+      return <TimelineOverviewPage search={search} setSearch={(s) => navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...s }), replace: true })} />
+    },
+  })
   const issue = createRoute({
     getParentRoute: () => projects,
     path: '$key/$ref',
@@ -107,5 +117,5 @@ export function appRoutes(parent: AnyRoute) {
     },
   })
 
-  return [notes, note, tasks, task, projects.addChildren([mine, project, issue])]
+  return [notes, note, tasks, task, projects.addChildren([mine, overview, project, issue])]
 }
