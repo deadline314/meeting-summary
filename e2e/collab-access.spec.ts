@@ -31,13 +31,26 @@ test('made an attendee while the note is open: the editor appears and edits reac
   await guest.page.keyboard.type('加入後的第一句話。\n\n')
   // The owner sees it, and both documents are identical.
   await expect(page.locator('.cm-content')).toContainText('加入後的第一句話', { timeout: 5000 })
-  await page.keyboard.press('Control+Home')
+  // (Typed at the top: the editor only renders lines in view.)
   await page.locator('.cm-content').click()
-  await page.keyboard.press('Control+End')
-  await page.keyboard.type('\n擁有者的回覆。')
+  await page.keyboard.press('Control+Home')
+  await page.keyboard.type('擁有者的回覆。\n')
   await expect(guest.page.locator('.cm-content')).toContainText('擁有者的回覆', { timeout: 5000 })
-  const text = (p: typeof page) => p.locator('.cm-content').evaluate((el) => (el as HTMLElement).innerText)
-  await expect.poll(async () => (await text(page)) === (await text(guest.page)), { timeout: 5000 }).toBe(true)
+  // Both screens show the same opening lines in the same order.
+  // Line text without the other person's cursor label.
+  const head = (p: typeof page) =>
+    p.locator('.cm-line').evaluateAll((ls) =>
+      ls
+        .slice(0, 4)
+        .map((l) => {
+          const c = l.cloneNode(true) as HTMLElement
+          c.querySelectorAll('.cm-ySelectionCaret, .cm-ySelectionInfo').forEach((x) => x.remove())
+          return c.textContent
+        })
+        .join('\n'),
+    )
+  await expect.poll(async () => (await head(page)) === (await head(guest.page)), { timeout: 5000 }).toBe(true)
+  expect(await head(guest.page)).toMatch(/^擁有者的回覆。\n加入後的第一句話。/)
   await shot(guest.page, info, 'MS-52', 'synced')
   await guest.ctx.close()
 })
