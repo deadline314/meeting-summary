@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { email, isMobile, newUserPage, shot } from './helpers'
@@ -264,4 +265,45 @@ test("the assignment's own sample files pass on the platform (CSV and XLSX)", as
     } else await shot(page, info, 'MS-56', 'csv')
     await page.keyboard.press('Escape')
   }
+})
+
+test('weather task: the grader passes a clean file and marks the mistakes in another', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop-light', 'grader behaviour; one device is enough')
+  test.setTimeout(240_000)
+  // Generated, synthetic samples (examples/tasks/weather/make_samples.py).
+  execFileSync('python', ['examples/tasks/weather/make_samples.py'])
+  await becomeTeacher(page, 'wx-t', '天氣老師')
+  await page.goto('/tasks')
+  await page.getByRole('button', { name: '新增任務' }).first().click()
+  await page.waitForURL(/\/tasks\/[\w-]+\?tab=settings/)
+  await page.getByLabel('任務名稱').fill('每日天氣資料收集')
+  await page.getByRole('tab', { name: '評測' }).click()
+  const grader = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上傳' }).first().click()
+  await (await grader).setFiles('examples/tasks/weather/grade.py')
+  await expect(page.getByText('grade.py', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: '提交規則' }).click()
+  await page.getByLabel('允許的副檔名').fill('.csv,.xlsx')
+  await page.getByRole('button', { name: '儲存' }).click()
+  await expect(page.getByText('已儲存').first()).toBeVisible()
+  await page.getByRole('tab', { name: '試跑與發布' }).click()
+  for (const [file, expected] of [
+    ['examples/tasks/weather/samples/bad_common_mistakes.csv', 'ERROR 8｜WARNING 3｜27 天'],
+    ['examples/tasks/weather/samples/good.csv', 'ERROR 0｜WARNING 0｜27 天'],
+  ] as const) {
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上傳範例提交' }).click()
+    await (await chooser).setFiles(file)
+    await waitGraded(page)
+    await expect(page.getByText(expected).first()).toBeVisible({ timeout: 120_000 })
+    if (file.includes('bad')) {
+      await shot(page, info, 'MS-58', 'result')
+      await page.getByRole('button', { name: '第 3 列 · 降水量' }).click()
+      await expect(page.getByRole('dialog').getByText('27 筆資料')).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByRole('dialog').getByRole('complementary')).toContainText('不是真正的數值')
+      await shot(page, info, 'MS-58', 'viewer')
+      await page.keyboard.press('Escape')
+    }
+  }
+  await expect(page.getByText('試跑通過', { exact: true })).toBeVisible()
 })
