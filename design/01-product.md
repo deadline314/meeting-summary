@@ -47,6 +47,6 @@
 
 ## 4. 刻意不做（v1）
 
-- Email／Slack 通知（v1 只有站內通知，見 open-questions）
+- Slack 通知（Email 通知見 MS-57）
 - 參考文件 §1 列出的 Sprint、Roadmap、Triage、SLA、Git 分支連動
 - 內建 Chat AI 入口（外部 AI 走 MCP）
