@@ -207,6 +207,41 @@ describe('meeting notes', () => {
     expect(r.body.comment.resolvedAt).toBeTruthy()
     expect((await a.call('/api/notes/does-not-exist/comments')).status).toBe(404)
   })
+  it('a thread whose first comment was deleted can still be replied to and resolved until nothing is left', async () => {
+    const a = await login(uniq('dt'))
+    const b = await login(uniq('dt2'))
+    const { note } = (await a.call<NoteRes>('/api/notes', { method: 'POST', body: { title: 'D', startsAt: Date.now() } })).body
+    const base = `/api/notes/${note.id}/comments`
+    const root = (await a.call<{ comment: { id: string } }>(base, { method: 'POST', body: { body: '原本的問題', anchor: { start: 'x', end: 'y' }, quote: '背景' } })).body.comment.id
+    const reply = (await b.call<{ comment: { id: string } }>(base, { method: 'POST', body: { body: '我的回覆', parentId: root } })).body.comment.id
+    const gone = (await b.call<{ comment: { id: string } }>(base, { method: 'POST', body: { body: '刪掉的回覆', parentId: root } })).body.comment.id
+    expect((await b.call(`${base}/${gone}`, { method: 'DELETE' })).status).toBe(200)
+    expect((await a.call(`${base}/${root}`, { method: 'DELETE' })).status).toBe(200)
+
+    type Row = { id: string; body: string; deletedAt: number | null }
+    const list = async () => (await a.call<{ items: Row[] }>(base)).body.items
+    const open = async () => (await a.call<{ note: { openComments: number } }>(`/api/notes/${note.id}`)).body.note.openComments
+    // The placeholder stays (without its text) while a reply is left; the deleted reply is gone.
+    expect((await list()).map((r) => [r.id, r.body])).toEqual([[root, ''], [reply, '我的回覆']])
+    expect(await open()).toBe(1)
+    const resolved = await b.call<{ comment: { resolvedAt: number; body: string } }>(`${base}/${root}`, { method: 'PATCH', body: { resolved: true } })
+    expect(resolved.status).toBe(200)
+    expect(resolved.body.comment.resolvedAt).toBeTruthy()
+    expect(resolved.body.comment.body).toBe('')
+    expect(await open()).toBe(0)
+    expect((await b.call(`${base}/${root}`, { method: 'PATCH', body: { resolved: false } })).status).toBe(200)
+    expect((await a.call(base, { method: 'POST', body: { body: '再補充', parentId: root } })).status).toBe(201)
+
+    // Once every reply is deleted too, the thread disappears everywhere.
+    for (const r of (await list()).filter((r) => r.id !== root)) {
+      const who = r.body === '再補充' ? a : b
+      expect((await who.call(`${base}/${r.id}`, { method: 'DELETE' })).status).toBe(200)
+    }
+    expect(await list()).toEqual([])
+    expect(await open()).toBe(0)
+    expect((await b.call(`${base}/${root}`, { method: 'PATCH', body: { resolved: true } })).status).toBe(404)
+    expect((await b.call(base, { method: 'POST', body: { body: 'late', parentId: root } })).status).toBe(404)
+  })
   it('note comments notify the creator, the recorder and anyone @-mentioned (not the author)', async () => {
     const a = await login(uniq('nc'))
     const rec = await login(uniq('nr'))

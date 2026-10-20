@@ -47,6 +47,12 @@ async function canReadNote(ctx: Ctx, n: Note) {
   return (await visibleProjectIds(ctx)).includes(n.projectId)
 }
 
+/**
+ * An unresolved thread that is still on show: its first comment exists, or a reply under it
+ * does (a deleted first comment stays as a placeholder while the discussion continues).
+ */
+export const openThread = sql`${noteComments.parentId} is null and ${noteComments.resolvedAt} is null and (${noteComments.deletedAt} is null or exists (select 1 from note_comments r where r.parent_id = ${noteComments.id} and r.deleted_at is null))`
+
 /** Loads a note the caller may read, or throws 404 (never reveals that it exists). */
 export async function getNote(ctx: Ctx, id: string) {
   const n = await ctx.db.select().from(notes).where(eq(notes.id, id)).get()
@@ -58,7 +64,7 @@ export async function noteDto(ctx: Ctx, n: Note) {
   const open = await ctx.db
     .select({ n: sql<number>`count(*)` })
     .from(noteComments)
-    .where(and(eq(noteComments.noteId, n.id), isNull(noteComments.parentId), isNull(noteComments.resolvedAt), isNull(noteComments.deletedAt)))
+    .where(and(eq(noteComments.noteId, n.id), openThread))
     .get()
   return { ...n, canEdit: canEditNote(ctx, n), openComments: open?.n ?? 0 }
 }
@@ -170,7 +176,7 @@ export async function listNotes(ctx: Ctx, q: NoteQuery) {
     q.recorderId ? eq(notes.recorderId, q.recorderId) : undefined,
     q.attendeeId ? sql`exists (select 1 from json_each(${notes.attendeeIds}) where value = ${q.attendeeId})` : undefined,
     q.openComments
-      ? sql`exists (select 1 from note_comments c where c.note_id = ${notes.id} and c.parent_id is null and c.resolved_at is null and c.deleted_at is null)`
+      ? sql`exists (select 1 from note_comments where ${noteComments.noteId} = ${notes.id} and ${openThread})`
       : undefined,
     // ponytail: LIKE scan; move to a D1 FTS5 table if notes grow past ~50k.
     term ? or(like(notes.title, `%${term}%`), like(notes.content, `%${term}%`)) : undefined,
@@ -184,7 +190,7 @@ export async function listNotes(ctx: Ctx, q: NoteQuery) {
     ? await ctx.db
         .select({ noteId: noteComments.noteId, n: sql<number>`count(*)` })
         .from(noteComments)
-        .where(and(inArray(noteComments.noteId, ids), isNull(noteComments.parentId), isNull(noteComments.resolvedAt), isNull(noteComments.deletedAt)))
+        .where(and(inArray(noteComments.noteId, ids), openThread))
         .groupBy(noteComments.noteId)
         .all()
     : []
