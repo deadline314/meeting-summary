@@ -100,6 +100,9 @@ async function grade(job) {
 
     // Phase 2 (no network, limits): run the grader against the submission.
     const name = `grade-${randomUUID().slice(0, 12)}`
+    // Run as the runner's own user: the work dir is mkdtemp's 0700, and with every capability
+    // dropped even root inside the container can't enter a directory it doesn't own.
+    const asUser = typeof process.getuid === 'function' ? ['--user', `${process.getuid()}:${process.getgid()}`, '-e', 'HOME=/tmp'] : []
     const p2 = noDocker
       ? await hostRun(work, entry, job.timeoutSec * 1000)
       : await run(
@@ -107,13 +110,14 @@ async function grade(job) {
       [
         'run', '--rm', '--name', name, '--network', 'none',
         '--memory', `${job.memoryMb}m`, '--memory-swap', `${job.memoryMb}m`, '--cpus', '2', '--pids-limit', '256',
-        '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL',
+        '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL', ...asUser,
         '-e', 'PYTHONPATH=/work/.deps', '-e', 'PYTHONDONTWRITEBYTECODE=1', '-e', 'PYTHONUTF8=1', '-v', `${work}:/work`, '-w', '/work',
-        job.image, 'sh', '-c', `python ${entry} /work/submission /work/data /work/out > /work/out/log.txt 2>&1`,
+        job.image, 'sh', '-c', `python "${entry}" /work/submission /work/data /work/out > /work/out/log.txt 2>&1`,
       ],
       { timeoutMs: job.timeoutSec * 1000, name },
     )
-    result.log = await readFile(join(work, 'out', 'log.txt'), 'utf8').then((s) => s.slice(-LOG_TAIL)).catch(() => null)
+    // No log file means the shell itself failed before Python ran: keep its own error instead.
+    result.log = await readFile(join(work, 'out', 'log.txt'), 'utf8').then((s) => s.slice(-LOG_TAIL)).catch(() => p2.stderr || null)
     if (p2.timedOut) {
       result.status = 'timeout'
       result.message = `@grader.timeout:${job.timeoutSec}`
