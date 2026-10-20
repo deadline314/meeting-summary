@@ -23,8 +23,8 @@
     }
   ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "meeting-summary-files" }],
-  "durable_objects": { "bindings": [{ "name": "DOC_ROOM", "class_name": "DocRoom" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DocRoom"] }],
+  "durable_objects": { "bindings": [{ "name": "DOC_ROOM", "class_name": "DocRoom" }, { "name": "OUTBOX", "class_name": "Outbox" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DocRoom"] }, { "tag": "v2", "new_sqlite_classes": ["Outbox"] }],
   "vars": {
     "APP_VERSION": "0.1.0",
     // OWNER_EMAILS, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GITHUB_TOKEN are Worker secrets
@@ -32,6 +32,9 @@
     "GITHUB_REPO": "deadline314/meeting-summary",
     "GRADER_MODE": "github",
     // Public origin of the site, sent to the grading workflow so it knows where to report.
-    "SITE_URL": "https://student-paltform.phocoenoides.com"
+    "SITE_URL": "https://student-paltform.phocoenoides.com",
+    // Sender for email notifications; its domain must be verified in Resend. Mail is only sent
+    // when the RESEND_API_KEY secret is set too.
+    "EMAIL_FROM": "noreply@phocoenoides.com"
   }
 }

@@ -1035,4 +1035,10 @@ export const zh = {
   'data.delim.tab': "Tab",
   'data.delim.semicolon': "分號",
   'data.delim.pipe': "直線 |",
+  'notify.email': "Email 通知",
+  'notify.emailHint': "10 分鐘內沒讀的通知，會合併成一封寄到 {email}",
+  'notify.emailUnavailable': "站台尚未設定寄信服務，目前只有站內通知",
+  'email.subject': "{site}：{n} 則未讀通知",
+  'email.intro': "你有 {n} 則還沒看的通知：",
+  'email.manage': "管理通知設定",
 } as const

@@ -1,4 +1,5 @@
-import { BellRing } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { BellRing, Mail } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '../../lib/api'
 import { useI18n, type MsgKey } from '../../lib/i18n'
@@ -41,7 +42,13 @@ export function NotificationPrefs() {
   }
   if (projects.isPending) return <Skeleton className="h-48" />
   const all = projects.data ?? []
-  if (!all.length) return <EmptyState icon={<BellRing />} title={t('notify.noProjects')} hint={t('notify.noProjectsHint')} />
+  if (!all.length)
+    return (
+      <div className="flex flex-col gap-4">
+        <EmailPref />
+        <EmptyState icon={<BellRing />} title={t('notify.noProjects')} hint={t('notify.noProjectsHint')} />
+      </div>
+    )
   const section = (state: ProjectRow['state'], list: ProjectRow[]) => {
     if (!list.length) return null
     const keys = list.flatMap((p) => NOTIFY_EVENTS.map((e) => pair(p.id, e)))
@@ -99,10 +106,43 @@ export function NotificationPrefs() {
   }
   return (
     <div className="flex flex-col gap-4">
+      <EmailPref />
       <p className="text-sm text-fg-3">{t('notify.hint')}</p>
       {section('active', all.filter((p) => p.state === 'active'))}
       {section('closed', all.filter((p) => p.state === 'closed'))}
       {section('archived', all.filter((p) => p.state === 'archived'))}
     </div>
+  )
+}
+
+/** Email digests of notices left unread; on by default, off when the site has no mail key. */
+function EmailPref() {
+  const { t } = useI18n()
+  const me = useMe()
+  const enabled = useQuery({ queryKey: ['config'], queryFn: () => api<{ email?: boolean }>('/api/config'), staleTime: 300_000 }).data?.email
+  const [on, setOn] = useState(!me.prefs.emailOff)
+  const save = (v: boolean) => {
+    setOn(v)
+    api<{ user: typeof me }>('/api/me', { method: 'PATCH', body: { prefs: { emailOff: !v } } }).then(
+      (r) => refreshMe(r.user),
+      (err) => {
+        setOn(!me.prefs.emailOff)
+        toastError(err)
+      },
+    )
+  }
+  return (
+    <Card className="flex items-center gap-3 px-4 py-2">
+      <Mail className="size-5 shrink-0 text-fg-3" />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold">{t('notify.email')}</div>
+        <div className="text-xs text-fg-3">{enabled === false ? t('notify.emailUnavailable') : t('notify.emailHint', { email: me.email })}</div>
+      </div>
+      {enabled !== false && (
+        <label className="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center">
+          <input type="checkbox" className="size-4 accent-accent" checked={on} onChange={(e) => save(e.target.checked)} aria-label={t('notify.email')} />
+        </label>
+      )}
+    </Card>
   )
 }

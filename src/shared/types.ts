@@ -9,7 +9,7 @@ export type UserDto = {
   avatarUrl: string | null
   role: Role
   status: UserStatus
-  prefs: { locale?: 'zh' | 'en'; accent?: string; mode?: string; notifyOff?: string[]; toursSeen?: string[] }
+  prefs: { locale?: 'zh' | 'en'; accent?: string; mode?: string; notifyOff?: string[]; emailOff?: boolean; toursSeen?: string[] }
   onboarded: boolean
   createdAt: number
   lastSeenAt: number | null

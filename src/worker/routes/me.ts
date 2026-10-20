@@ -8,6 +8,7 @@ import { sessions, users } from '../db/schema'
 import { notFound } from '../lib/errors'
 import { LAST_LOGIN_COOKIE, revokeOtherSessions } from '../services/auth'
 import { createApiKey, listApiKeys, revokeApiKey } from '../services/api-keys'
+import { emailEnabled } from '../services/email'
 import { readSettings } from '../services/site'
 import { directory, hasAdminKey, redeemAdminKey, rotateAdminKey, updateMe, userDto } from '../services/users'
 import { devLoginEnabled } from './auth'
@@ -20,13 +21,14 @@ const prefs = z.object({
   accent: z.enum(['indigo', 'emerald', 'amber', 'rose', 'slate']).optional(),
   mode: z.enum(['light', 'dark', 'system']).optional(),
   notifyOff: z.array(z.string().max(80)).max(4000).optional(),
+  emailOff: z.boolean().optional(),
   toursSeen: z.array(z.enum(['notes', 'tasks', 'projects'])).max(10).optional(),
 })
 
 // Public: what the login page needs.
 meRoutes.get('/config', async (c) => {
   const site = (await readSettings({ db: c.get('db') })).site
-  return c.json({ version: c.env.APP_VERSION, devLogin: devLoginEnabled(c), google: !!c.env.GOOGLE_CLIENT_ID, siteName: site.name, siteIcon: site.icon,
+  return c.json({ version: c.env.APP_VERSION, devLogin: devLoginEnabled(c), google: !!c.env.GOOGLE_CLIENT_ID, email: emailEnabled(c.env), siteName: site.name, siteIcon: site.icon,
     // Google Picker needs a browser API key and the Cloud project number; both are public by design.
     drivePicker: c.env.GOOGLE_PICKER_KEY && c.env.GOOGLE_APP_ID && c.env.GOOGLE_CLIENT_ID ? { apiKey: c.env.GOOGLE_PICKER_KEY, appId: c.env.GOOGLE_APP_ID, clientId: c.env.GOOGLE_CLIENT_ID } : null })
 },

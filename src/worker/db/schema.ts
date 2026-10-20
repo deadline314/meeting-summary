@@ -16,7 +16,7 @@ export const users = sqliteTable(
     avatarUrl: text('avatar_url'),
     role: text('role', { enum: ['student', 'admin', 'owner'] }).notNull().default('student'),
     status: text('status', { enum: ['active', 'disabled', 'removed'] }).notNull().default('active'),
-    prefs: json<{ locale?: string; accent?: string; mode?: string; notifyOff?: string[]; toursSeen?: string[] }>('prefs').notNull().default({}),
+    prefs: json<{ locale?: string; accent?: string; mode?: string; notifyOff?: string[]; emailOff?: boolean; toursSeen?: string[] }>('prefs').notNull().default({}),
     onboardedAt: ts('onboarded_at'),
     createdAt: ts('created_at').notNull(),
     lastSeenAt: ts('last_seen_at'),
@@ -126,9 +126,11 @@ export const notifications = sqliteTable(
     entityId: text('entity_id').notNull(),
     data: json<Record<string, unknown>>('data').notNull().default({}),
     readAt: ts('read_at'),
+    /** When this notice went out by email (null: not yet, or new activity since). */
+    emailAt: ts('email_at'),
     createdAt: ts('created_at').notNull(),
   },
-  (t) => [index('notifications_user').on(t.userId, t.readAt, t.createdAt)],
+  (t) => [index('notifications_user').on(t.userId, t.readAt, t.createdAt), index('notifications_created').on(t.createdAt)],
 )
 
 // ---------- meeting notes ----------

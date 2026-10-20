@@ -4,6 +4,7 @@ import { countRequest } from './services/site'
 import { errorFields, log } from './lib/log'
 
 export { DocRoom } from './do/doc-room'
+export { Outbox } from './do/outbox'
 
 const SWEEP_EVERY = 5 * 60_000
 // ponytail: per-isolate throttle instead of a cron trigger (the free plan allows only 5 crons per account

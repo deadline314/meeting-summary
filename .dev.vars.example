@@ -11,6 +11,8 @@ GOOGLE_CLIENT_SECRET=
 # Optional: Google Drive picker (browser API key restricted to your site + Cloud project number)
 GOOGLE_PICKER_KEY=
 GOOGLE_APP_ID=
+# Optional: Resend API key for email notifications (also needs EMAIL_FROM in wrangler.jsonc)
+RESEND_API_KEY=
 # Optional: fine-grained token with actions:write on GITHUB_REPO, for GRADER_MODE=github
 GITHUB_TOKEN=
 

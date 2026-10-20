@@ -52,6 +52,16 @@ npm run dev
 4. OAuth 同意畫面加入範圍 `https://www.googleapis.com/auth/drive.file`（只存取使用者選的檔案，不需 Google 審核）
 5. 設定：`npx wrangler secret put GOOGLE_PICKER_KEY`（API 金鑰）、`npx wrangler secret put GOOGLE_APP_ID`（Cloud 專案編號，在專案資訊頁）
 
+### Email 通知（選用，Resend）
+
+沒有設定時只有站內通知。要開啟「10 分鐘內沒讀的通知寄 Email」：
+
+1. 到 [resend.com](https://resend.com) 註冊（免費方案每日 100 封、每月 3,000 封）
+2. Domains → Add Domain 加入寄件網域（例如 `phocoenoides.com`），把它給的 DNS 記錄（SPF、DKIM）加到 Cloudflare DNS，等狀態變成 Verified
+3. API Keys → Create API Key，權限選 **Sending access**、網域選剛才那個
+4. `npx wrangler secret put RESEND_API_KEY`（貼上金鑰）
+5. 寄件地址在 `wrangler.jsonc` 的 `EMAIL_FROM`，網域要和第 2 步相同
+
 ### 評測（GitHub Actions）
 
 評測 workflow 在本 repo（公開 repo 的代管 runner 免費、分鐘數不限）。建立一個 fine-grained token，只給本 repo 的 **Actions: Read and write**，存成 Worker 秘密 `GITHUB_TOKEN`。詳見 [`design/02-architecture.md`](design/02-architecture.md) §6 與 [`.github/workflows/grade.yml`](.github/workflows/grade.yml)。

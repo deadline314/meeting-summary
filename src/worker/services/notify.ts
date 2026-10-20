@@ -2,7 +2,9 @@ import { and, eq, gt, inArray, isNull } from 'drizzle-orm'
 import type { Ctx } from '../context'
 import { notifications, users } from '../db/schema'
 import { newId } from '../lib/crypto'
+import { outbox } from '../do/outbox'
 import { errorFields, log } from '../lib/log'
+import { EMAIL_DELAY, emailEnabled } from './email'
 
 /** Actor id for notifications the platform sends on its own (e.g. grading results). */
 export const SYSTEM_ACTOR = 'system'
@@ -39,7 +41,7 @@ export function notify(ctx: Ctx, recipients: Iterable<string>, n: Notice) {
         .get()
       if (prev && MERGEABLE.has(prev.type)) {
         const count = Number(prev.data.count ?? 1) + 1
-        await ctx.db.update(notifications).set({ type: n.type, actorId, data: { ...prev.data, ...n.data, count }, createdAt: now }).where(eq(notifications.id, prev.id))
+        await ctx.db.update(notifications).set({ type: n.type, actorId, data: { ...prev.data, ...n.data, count }, createdAt: now, emailAt: null }).where(eq(notifications.id, prev.id))
         return
       }
     }
@@ -54,6 +56,7 @@ export function notify(ctx: Ctx, recipients: Iterable<string>, n: Notice) {
         to = to.filter((id) => !muted.has(id))
       }
       await Promise.all(to.map((userId) => deliver(userId).catch((err) => log('warn', 'notification failed', { userId, type: n.type, ...errorFields(err) }))))
+      if (to.length && emailEnabled(ctx.env)) await outbox(ctx.env).wake(now + EMAIL_DELAY)
     })().catch((err) => log('warn', 'notification fan-out failed', { type: n.type, ...errorFields(err) })),
   )
 }

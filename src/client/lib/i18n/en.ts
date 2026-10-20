@@ -1036,4 +1036,10 @@ export const en: Record<keyof typeof zh, string> = {
   'data.delim.tab': "tab",
   'data.delim.semicolon': "semicolon",
   'data.delim.pipe': "pipe",
+  'notify.email': "Email notifications",
+  'notify.emailHint': "Notifications left unread for 10 minutes are sent together to {email}",
+  'notify.emailUnavailable': "This site has no mail service set up yet, so notifications stay in the app",
+  'email.subject': "{site}: {n} unread notifications",
+  'email.intro': "You have {n} unread notifications:",
+  'email.manage': "Manage notification settings",
 }
