@@ -1044,4 +1044,8 @@ export const en: Record<keyof typeof zh, string> = {
   'email.manage': "Manage notification settings",
   'create.open': "Open",
   'create.reopen': "Reopen draft",
+  'notes.aloneHere': "Only you are here",
+  'notes.jumpTo': "Jump to where they are editing",
+  'notes.peerNoCursor': "{name} is not editing right now (maybe previewing)",
+  'notes.jumpNeedsEditor': "Switch to edit or split view to jump there",
 }

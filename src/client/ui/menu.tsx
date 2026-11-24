@@ -11,10 +11,21 @@ const item =
 export const Menu = M.Root
 export const MenuTrigger = M.Trigger
 
-export function MenuContent({ children, align = 'end', className }: { children: ReactNode; align?: 'start' | 'end' | 'center'; className?: string }) {
+export function MenuContent({
+  children,
+  align = 'end',
+  className,
+  keepFocus,
+}: {
+  children: ReactNode
+  align?: 'start' | 'end' | 'center'
+  className?: string
+  /** Don't return focus to the trigger on close (an item moved it somewhere on purpose). */
+  keepFocus?: boolean
+}) {
   return (
     <M.Portal>
-      <M.Content data-layer align={align} sideOffset={6} collisionPadding={12} className={cx(panel, className)}>
+      <M.Content data-layer align={align} sideOffset={6} collisionPadding={12} className={cx(panel, className)} onCloseAutoFocus={keepFocus ? (e) => e.preventDefault() : undefined}>
         {children}
       </M.Content>
     </M.Portal>

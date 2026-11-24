@@ -7,7 +7,8 @@ import { cast, isMobile, login, newUserPage, shot } from './helpers'
 test('meeting notes: create, collaborate, authors, comment', async ({ page, browser }, info) => {
   const mobile = isMobile(info)
   const tag = info.project.name
-  const [aliceName, bobName] = cast(info)
+  // Own names: other specs running in parallel sign in the same cast.
+  const [aliceName, bobName] = cast(info).map((n) => `${n}記`) as [string, string]
   await login(page, `alice-${tag}`, aliceName)
   const bob = await newUserPage(browser, info, `bob-${tag}`, bobName)
   const me = await (await page.request.get('/api/me')).json()
@@ -125,6 +126,8 @@ test('meeting notes: create, collaborate, authors, comment', async ({ page, brow
 
   // List + calendar.
   await page.goto('/notes')
+  // Other specs add notes at the same time; find ours.
+  await page.getByRole('textbox', { name: '搜尋', exact: true }).fill(`週會 ${tag}`)
   await expect(page.getByText(`週會 ${tag}`)).toBeVisible()
   await shot(page, info, 'MS-20', 'list')
   await page.goto('/notes?view=calendar')

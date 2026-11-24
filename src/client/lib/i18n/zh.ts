@@ -1043,4 +1043,8 @@ export const zh = {
   'email.manage': "管理通知設定",
   'create.open': "開啟",
   'create.reopen': "重新開啟草稿",
+  'notes.aloneHere': "目前只有你在這份紀錄",
+  'notes.jumpTo': "跳到他正在編輯的位置",
+  'notes.peerNoCursor': "{name} 目前沒有在編輯（可能在預覽）",
+  'notes.jumpNeedsEditor': "切到編輯或分割模式才能跳到對方的位置",
 } as const

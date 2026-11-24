@@ -39,6 +39,17 @@ function drop(noteId: string, r: NonNullable<ReturnType<typeof rooms.get>>) {
   if (rooms.get(noteId) === r) rooms.delete(noteId)
 }
 
+/**
+ * Opens a note's live connection ahead of its page (the page then finds it already syncing).
+ * Closes again by itself if no page takes it within 15 s.
+ */
+export function warmRoom(noteId: string) {
+  const r = room(noteId)
+  if (r.refs > 0) return
+  clearTimeout(r.timer)
+  r.timer = setTimeout(() => drop(noteId, r), 15_000)
+}
+
 // Close codes from the document server (see doc-room.ts).
 const PERMISSIONS_CHANGED = 4000
 const READ_ONLY = 4003
@@ -82,19 +93,21 @@ export function useCollab(noteId: string): Collab {
 export type Status = 'connecting' | 'connected' | 'disconnected'
 
 export function useStatus(p: WebsocketProvider) {
-  const [status, setStatus] = useState<Status>('connecting')
-  const [synced, setSynced] = useState(false)
-  useEffect(() => {
-    const onStatus = (e: { status: Status }) => setStatus(e.status)
-    const onSync = (s: boolean) => setSynced(s)
-    p.on('status', onStatus)
-    p.on('sync', onSync)
-    return () => {
-      p.off('status', onStatus)
-      p.off('sync', onSync)
-    }
-  }, [p])
-  return { status, synced }
+  // Read the provider's live state (it may have connected and synced before this page mounted,
+  // see warmRoom), re-reading whenever it reports a change.
+  const snap = useSyncExternalStore(
+    (cb) => {
+      p.on('status', cb)
+      p.on('sync', cb)
+      return () => {
+        p.off('status', cb)
+        p.off('sync', cb)
+      }
+    },
+    () => `${p.wsconnected ? 'connected' : p.wsconnecting ? 'connecting' : 'disconnected'}|${p.synced ? 1 : 0}`,
+  )
+  const [status, synced] = snap.split('|')
+  return { status: status as Status, synced: synced === '1' }
 }
 
 export function usePeers(p: WebsocketProvider): Peer[] {

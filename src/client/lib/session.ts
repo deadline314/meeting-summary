@@ -1,14 +1,22 @@
 import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import type { DirectoryUser, UserDto } from '@shared/types'
 import { ApiError, api, queryClient } from './api'
+import { clearQueryCache, persistQueryCache, restoreQueryCache, stopPersisting } from './query-cache'
 
 export const meQuery = queryOptions({
   queryKey: ['me'],
   queryFn: async () => {
     try {
-      return (await api<{ user: UserDto }>('/api/me')).user
+      const user = (await api<{ user: UserDto }>('/api/me')).user
+      // Once we know who this is, the pages they saw last time can draw from the browser.
+      await restoreQueryCache(queryClient, user.id)
+      persistQueryCache(queryClient, user.id)
+      return user
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return null
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        stopPersisting()
+        return null
+      }
       throw err
     }
   },
@@ -42,6 +50,8 @@ export function refreshMe(user: UserDto) {
 
 export async function logout(forget = false) {
   await api(`/auth/logout${forget ? '?forget=1' : ''}`, { method: 'POST' }).catch(() => undefined)
+  stopPersisting()
+  await clearQueryCache()
   queryClient.clear()
   location.href = '/login'
 }

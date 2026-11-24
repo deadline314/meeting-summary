@@ -277,3 +277,85 @@ test('context menus: task card (staff) and attachment', async ({ page, browser }
   expect(await page.getByRole('menu').getByRole('menuitem').allInnerTexts()).toEqual(['開啟', '下載', '複製連結', '刪除'])
   await shot(page, info, 'MS-51', 'attachment')
 })
+
+test('creating an issue closes at once and the toast opens it; edits on the issue page show at once', async ({ page }, info) => {
+  test.setTimeout(120_000)
+  const c = P[info.project.name]!
+  await login(page, `ci-${info.project.name}`, `${c.owner}快`)
+  const key = `CI${c.tag}`
+  await page.request.post('/api/projects', { data: { key, name: '快速操作' } })
+  await page.goto(`/projects/${key}`)
+  await expect(page.getByRole('heading', { name: '快速操作' })).toBeVisible()
+  if (isMobile(info)) await page.locator('[data-tour="pm-new"]').click()
+  else await page.keyboard.press('c')
+  await page.getByRole('dialog').getByPlaceholder(/標題|議題/).first().fill('馬上關掉的對話框')
+  await page.keyboard.press('Control+Enter')
+  // The dialog is gone before the server answers; the toast confirms and offers to open it.
+  await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 500 })
+  await expect(page.getByText(`已建立 ${key}-1`)).toBeVisible()
+  await shot(page, info, 'MS-60', 'created')
+  await page.getByRole('button', { name: '開啟' }).click()
+  await expect(page).toHaveURL(new RegExp(`/projects/${key}/${key}-1$`))
+  // Status changes on the issue page show before the server answers.
+  if (isMobile(info)) await page.locator('details > summary').click() // phones fold the properties under the title
+  await page.getByRole('button', { name: '狀態' }).click()
+  await page.getByRole('button', { name: '進行中', exact: true }).click()
+  await expect(page.getByRole('button', { name: '狀態' })).toContainText('進行中', { timeout: 300 })
+  await shot(page, info, 'MS-60', 'issue')
+})
+
+test('a project opened before draws at once from the browser cache, then refreshes; sign-out clears it', async ({ page }, info) => {
+  test.setTimeout(120_000)
+  const c = P[info.project.name]!
+  await login(page, `qc-${info.project.name}`, `${c.owner}快取`)
+  const key = `QC${c.tag}`
+  await page.request.post('/api/projects', { data: { key, name: '快取專案' } })
+  await page.request.post(`/api/projects/${key}/issues`, { data: { title: '上次看過的議題' } })
+  await page.goto(`/projects/${key}`)
+  await expect(page.getByText('上次看過的議題')).toBeVisible()
+  // The browser copy is written a moment after the data arrives, once the page is idle.
+  const saved = () =>
+    page.evaluate(
+      () =>
+        new Promise<string>((resolve) => {
+          const req = indexedDB.open('ms-cache', 1)
+          req.onupgradeneeded = () => req.result.createObjectStore('kv')
+          req.onsuccess = () => {
+            const r = req.result.transaction('kv', 'readonly').objectStore('kv').get('queries')
+            r.onsuccess = () => resolve(JSON.stringify(r.result ?? ''))
+          }
+          req.onerror = () => resolve('')
+        }),
+    )
+  await expect.poll(saved, { timeout: 15_000 }).toContain('上次看過的議題')
+  // Now the server is slow: the page still shows the list at once, from the browser.
+  let slow = 0
+  await page.route(`**/api/projects/${key}/**`, async (route) => {
+    slow++
+    await new Promise((r) => setTimeout(r, 3000))
+    await route.continue()
+  })
+  const t0 = Date.now()
+  await page.reload()
+  await expect(page.getByText('上次看過的議題')).toBeVisible()
+  expect(Date.now() - t0).toBeLessThan(2500)
+  expect(slow).toBeGreaterThan(0) // and it still asked the server for anything newer
+  await shot(page, info, 'MS-60', 'cached')
+  await page.unroute(`**/api/projects/${key}/**`)
+  // Signing out wipes it.
+  await page.getByRole('button', { name: '帳號選單' }).click()
+  await page.getByRole('menuitem', { name: '登出' }).click()
+  await page.waitForURL(/\/login/)
+  const left = await page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const req = indexedDB.open('ms-cache', 1)
+        req.onsuccess = () => {
+          const r = req.result.transaction('kv', 'readonly').objectStore('kv').count()
+          r.onsuccess = () => resolve(r.result)
+        }
+        req.onerror = () => resolve(-1)
+      }),
+  )
+  expect(left).toBe(0)
+})

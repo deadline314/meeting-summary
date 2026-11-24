@@ -54,3 +54,32 @@ test('made an attendee while the note is open: the editor appears and edits reac
   await shot(guest.page, info, 'MS-52', 'synced')
   await guest.ctx.close()
 })
+
+test('jump to where a collaborator is editing', async ({ page, browser }, info) => {
+  test.skip(isMobile(info), 'the online list sits in the desktop header')
+  test.setTimeout(120_000)
+  const [ownerName, guestName] = NAMES[info.project.name]!
+  await login(page, `jp-o-${info.project.name}`, `${ownerName}跳`)
+  const guest = await newUserPage(browser, info, `jp-g-${info.project.name}`, `${guestName}跳`)
+  const note = (await (await page.request.post('/api/notes', { data: { title: `跳到協作者 ${info.project.name}`, startsAt: Date.now(), attendeeIds: [guest.user.id] } })).json()).note as { id: string }
+  await page.goto(`/notes/${note.id}`)
+  await expect(page.locator('.cm-content')).toContainText('會議目的')
+  await guest.page.goto(`/notes/${note.id}`)
+  await guest.page.locator('.cm-content').click()
+  await guest.page.keyboard.press('Control+End')
+  // Far below the fold for the owner.
+  await guest.page.keyboard.type('\n'.repeat(60) + '訪客在文件最後寫的一句話')
+  // (The editor only draws lines near the screen, so the owner has no element for it yet.)
+  await page.waitForTimeout(800)
+  await expect(page.locator('.cm-line', { hasText: '訪客在文件最後寫的一句話' })).toHaveCount(0)
+  // The online list names the guest; choosing them moves our cursor to theirs.
+  await page.getByRole('button', { name: /人在線/ }).click()
+  await page.getByRole('menuitem', { name: new RegExp(`${guestName}跳`) }).click()
+  // That line is now on screen and we are typing there.
+  await expect(page.locator('.cm-line', { hasText: '訪客在文件最後寫的一句話' })).toBeInViewport()
+  await expect(page.locator('.cm-content')).toBeFocused()
+  await page.keyboard.type('★')
+  await expect(page.locator('.cm-line', { hasText: '訪客在文件最後寫的一句話' })).toContainText('★')
+  await shot(page, info, 'MS-61', 'jump')
+  await guest.ctx.close()
+})

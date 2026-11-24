@@ -37,6 +37,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as Y from 'yjs'
+import { EditorView } from '@codemirror/view'
 import { useActions } from '../../lib/actions'
 import { api } from '../../lib/api'
 import { useIsMobile, useOnline } from '../../lib/hooks'
@@ -55,7 +56,7 @@ import { Tooltip } from '../../ui/tooltip'
 import { FilesPanel } from '../files/files-panel'
 import { ActionItems } from './action-items'
 import { linkDriveUrl } from '../files/drive'
-import { authorRuns, b64ToAbs, relPosToB64, useAuthorsMap, useCollab, usePeers, useStatus, useText } from './collab'
+import { authorRuns, b64ToAbs, relPosToB64, useAuthorsMap, useCollab, usePeers, useStatus, useText, warmRoom, type Peer } from './collab'
 import { CommentsPanel, type Draft, type NoteComment, type Thread } from './comments'
 import { Editor, type EditorHandle, type FormatKind } from './editor'
 import { exportHtml, exportName, exportZip } from './export'
@@ -89,6 +90,8 @@ const PANEL_KEY = 'ms.note.panel'
 
 export function NotePage({ id, search, setSearch }: { id: string; search: NoteSearch; setSearch(s: Partial<NoteSearch>, replace?: boolean): void }) {
   const q = useQuery({ queryKey: ['note', id], queryFn: () => api<{ note: NoteDto }>(`/api/notes/${id}`) })
+  // The live document connects alongside the note's details instead of after them.
+  useEffect(() => warmRoom(id), [id])
   if (q.isPending)
     return (
       <div className="flex flex-col gap-4 p-6">
@@ -117,6 +120,18 @@ function NoteView({ note, search, setSearch }: { note: NoteDto; search: NoteSear
   const mode = mobile ? (search.mode === 'edit' && canEdit ? 'edit' : 'preview') : (search.mode ?? (canEdit ? 'split' : 'preview'))
   const showEditor = canEdit && mode !== 'preview'
   const showPreview = mode !== 'edit'
+  // Jump to where a collaborator is: their cursor, centred, with ours placed next to it.
+  const jumpTo = (peer: Peer) => {
+    const state = collab.provider.awareness.getStates().get(peer.clientId) as { cursor?: { head?: unknown; anchor?: unknown } } | undefined
+    const rel = state?.cursor?.head ?? state?.cursor?.anchor
+    const pos = rel ? Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(rel), collab.doc)?.index : undefined
+    const view = editor.current?.view()
+    if (pos === undefined || pos === null) return toast(t('notes.peerNoCursor', { name: peer.name }), 'info')
+    if (!view) return toast(t('notes.jumpNeedsEditor'), 'info')
+    view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'center' }) })
+    // After the menu has closed, so it doesn't take the focus back.
+    setTimeout(() => view.focus(), 0)
+  }
   const [panelOpen, setPanelOpen] = useState(() => {
     try {
       return localStorage.getItem(PANEL_KEY) !== '0'
@@ -264,7 +279,9 @@ function NoteView({ note, search, setSearch }: { note: NoteDto; search: NoteSear
     </AnimatePresence>
     <NoteHeader
       note={note}
-      peers={peers.map((p) => p.id)}
+      peers={peers}
+      me={collab.doc.clientID}
+      onJump={jumpTo}
       status={status}
       synced={synced}
       onEdit={() => setSearch({ edit: true }, true)}
@@ -515,13 +532,17 @@ function NoteView({ note, search, setSearch }: { note: NoteDto; search: NoteSear
 function NoteHeader({
   note,
   peers,
+  me: myClient,
+  onJump,
   status,
   synced,
   onEdit,
   onDelete,
 }: {
   note: NoteDto
-  peers: string[]
+  peers: Peer[]
+  me: number
+  onJump(p: Peer): void
   status: string
   synced: boolean
   onEdit(): void
@@ -597,13 +618,7 @@ function NoteHeader({
               {t('export.progress', progress)}
             </span>
           )}
-                    {peers.length > 0 && (
-            <Tooltip label={t('notes.online', { n: peers.length })}>
-              <span className="hidden sm:flex">
-                <AvatarStack ids={peers} max={4} size="sm" />
-              </span>
-            </Tooltip>
-          )}
+          {peers.length > 0 && <PeersMenu peers={peers} me={myClient} onJump={onJump} />}
           <Menu>
             <MenuTrigger asChild>
               <IconButton label={t('common.edit')} icon={<MoreHorizontal />} size="sm" />
@@ -643,6 +658,31 @@ function NoteHeader({
         </div>
       </div>
     </div>
+  )
+}
+
+/** Who is here; pick someone to jump to where they are editing. */
+function PeersMenu({ peers, me, onJump }: { peers: Peer[]; me: number; onJump(p: Peer): void }) {
+  const { t } = useI18n()
+  const others = peers.filter((p) => p.clientId !== me)
+  return (
+    <Menu>
+      <Tooltip label={t('notes.online', { n: peers.length })}>
+        <MenuTrigger asChild>
+          <button type="button" aria-label={t('notes.online', { n: peers.length })} className="hidden rounded-full p-0.5 hover:bg-surface-2 sm:flex">
+            <AvatarStack ids={peers.map((p) => p.id)} max={4} size="sm" />
+          </button>
+        </MenuTrigger>
+      </Tooltip>
+      <MenuContent keepFocus>
+        {others.length === 0 && <div className="px-2.5 py-2 text-xs text-fg-4">{t('notes.aloneHere')}</div>}
+        {others.map((p) => (
+          <MenuItem key={p.clientId} icon={<span className="size-2.5 rounded-full" style={{ background: p.color }} />} hint={t('notes.jumpTo')} onSelect={() => onJump(p)}>
+            {p.name}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
   )
 }
 

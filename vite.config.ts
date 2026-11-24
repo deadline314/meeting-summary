@@ -5,6 +5,8 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // Ties the browser's saved query data to one build: a new deploy starts fresh.
+  define: { 'import.meta.env.VITE_BUILD_ID': JSON.stringify(String(Date.now())) },
   plugins: [
     react(),
     tailwindcss(),

@@ -125,7 +125,7 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
     } else close()
     try {
       const r = await api<{ issue: IssueRow }>(`/api/projects/${projectKey}/issues`, { method: 'POST', body })
-      toast(t('create.created', { ref: r.issue.ref }), 'success', r.issue.title, { label: t('create.open'), run: () => navigate({ to: `/projects/${r.issue.projectKey}/${r.issue.ref}` }) })
+      toast(t('create.created', { ref: r.issue.ref }), 'success', r.issue.title, { label: t('create.open'), run: () => navigate({ to: `/projects/${projectKey}/${r.issue.ref}` }) })
       invalidateIssues()
       qc.invalidateQueries({ queryKey: ['issue'] })
     } catch (err) {

@@ -9,8 +9,8 @@ export default defineConfig({
   testDir: 'e2e',
   timeout: 90_000,
   fullyParallel: false,
-  workers: 1,
-  reporter: [['list']],
+  workers: 4,
+  reporter: process.env.CI ? [['list']] : [['./e2e/progress-reporter.ts']],
   use: { baseURL: 'http://localhost:5174', trace: 'retain-on-failure', locale: 'zh-TW' },
   webServer: { command: 'node scripts/e2e-server.mjs', url: 'http://localhost:5174/api/health', reuseExistingServer: false, timeout: 180_000 },
   projects: [

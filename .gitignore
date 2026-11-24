@@ -11,3 +11,4 @@ examples/**/hidden/
 examples/**/*.csv
 examples/**/*.xlsx
 examples/**/bad/
+e2e-progress.log

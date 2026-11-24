@@ -3,7 +3,7 @@ import { useTour } from '../../app/tour'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, FileArchive, FileCode, FileText, Link2, List, MapPin, MessageSquareWarning, Plus, Search, Trash2 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
 import { api, queryClient } from '../../lib/api'
 import { useDebounced } from '../../lib/hooks'
@@ -289,10 +289,18 @@ function NoteContextMenu({ n, children }: { n: NoteRow; children: React.ReactNod
 
 function NoteCard({ n }: { n: NoteRow }) {
   const { t, fmt } = useI18n()
+  // Hovering a moment loads the note's details, so opening it only waits for the live document.
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
   return (
     <NoteContextMenu n={n}>
     <Link
       to={`/notes/${n.id}`}
+      onPointerEnter={() => {
+        clearTimeout(timer.current)
+        timer.current = setTimeout(() => void queryClient.prefetchQuery({ queryKey: ['note', n.id], queryFn: () => api(`/api/notes/${n.id}`), staleTime: 15_000 }), 120)
+      }}
+      onPointerLeave={() => clearTimeout(timer.current)}
       className="group block rounded-2xl border border-line bg-surface p-4 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card"
     >
       <div className="flex items-start gap-3">
