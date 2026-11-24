@@ -5,6 +5,7 @@ import type { ApiErrorBody } from '@shared/errors'
 import type { AppEnv } from './context'
 import { getDb } from './db'
 import { sessions } from './db/schema'
+import { timedD1 } from './lib/db-timing'
 import { AppError } from './lib/errors'
 import { errorFields, log } from './lib/log'
 import { adminRoutes } from './routes/admin'
@@ -27,12 +28,15 @@ export const app = new Hono<AppEnv>()
 app.use('*', async (c, next) => {
   const requestId = c.req.header('cf-ray') ?? crypto.randomUUID()
   c.set('requestId', requestId)
-  c.set('db', getDb(c.env.DB))
+  const timed = timedD1(c.env.DB, Number((c.env as { DB_LATENCY_MS?: string }).DB_LATENCY_MS) || 0)
+  c.set('db', getDb(timed.db))
   c.set('user', null)
   c.set('sessionId', null)
   const started = Date.now()
   await next()
   c.header('x-request-id', requestId)
+  // Visible in the browser's network panel: database round trips are what users feel.
+  c.header('server-timing', `db;dur=${timed.stats.ms.toFixed(0)};desc="${timed.stats.count} queries"`, { append: true })
   if (c.res.status >= 500) log('error', 'request failed', { requestId, method: c.req.method, path: c.req.path, status: c.res.status })
   else log('info', 'request', { requestId, method: c.req.method, path: c.req.path, status: c.res.status, ms: Date.now() - started })
 })

@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Dialog as D } from 'radix-ui'
 import { FileText, FolderKanban, X } from 'lucide-react'
@@ -59,6 +60,7 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
   const { t } = useI18n()
   const mobile = useIsMobile()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const projects = useProjects()
   const writable = (projects.data ?? []).filter((p) => p.state === 'active' && canWrite(p.role))
   const [saved] = useState(readDraft)
@@ -70,7 +72,6 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
   )
   const [restored] = useState(usable)
   const [more, setMore] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
   const [pickers, setPickers] = useState<'s' | 'p' | 'a' | 'l' | null>(null)
   const title = useRef<HTMLInputElement>(null)
@@ -111,25 +112,25 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
     else close()
   }
   const submit = async () => {
-    if (!d.title.trim() || !projectKey || busy) return
-    setBusy(true)
+    if (!d.title.trim() || !projectKey) return
+    // Don't make people wait on the server: the dialog closes (or clears, in continuous mode) right
+    // away and the issue is sent in the background. A failure brings the draft back.
+    const sent = { ...d, projectKey }
+    const body = { title: d.title.trim(), description: d.description, status: d.status, priority: d.priority, assigneeIds: d.assigneeIds, labelIds: d.labelIds, parentRef: init.parentRef ?? null, operationId: crypto.randomUUID() }
+    const reopen = { projectKey, status: init.status, parentRef: init.parentRef }
+    writeDraft(null)
+    if (more) {
+      setD((x) => ({ ...x, title: '', description: '' }))
+      title.current?.focus()
+    } else close()
     try {
-      const r = await api<{ issue: IssueRow }>(`/api/projects/${projectKey}/issues`, {
-        method: 'POST',
-        body: { title: d.title.trim(), description: d.description, status: d.status, priority: d.priority, assigneeIds: d.assigneeIds, labelIds: d.labelIds, parentRef: init.parentRef ?? null, operationId: crypto.randomUUID() },
-      })
-      toast(t('create.created', { ref: r.issue.ref }))
+      const r = await api<{ issue: IssueRow }>(`/api/projects/${projectKey}/issues`, { method: 'POST', body })
+      toast(t('create.created', { ref: r.issue.ref }), 'success', r.issue.title, { label: t('create.open'), run: () => navigate({ to: `/projects/${r.issue.projectKey}/${r.issue.ref}` }) })
       invalidateIssues()
       qc.invalidateQueries({ queryKey: ['issue'] })
-      writeDraft(null)
-      if (more) {
-        setD((x) => ({ ...x, title: '', description: '' }))
-        title.current?.focus()
-      } else close()
     } catch (err) {
-      toastError(err)
-    } finally {
-      setBusy(false)
+      writeDraft(sent)
+      toastError(err, { label: t('create.reopen'), run: () => openCreateIssue(reopen) })
     }
   }
   const onKey = (e: React.KeyboardEvent) => {
@@ -296,7 +297,7 @@ function CreateIssueDialog({ init }: { init: NonNullable<Open> }) {
               {t('create.continuous')}
             </label>
             <div className="flex-1" />
-            <Button variant="primary" loading={busy} disabled={!d.title.trim() || !projectKey} onClick={submit} title="Ctrl/⌘ + Enter">
+            <Button variant="primary" disabled={!d.title.trim() || !projectKey} onClick={submit} title="Ctrl/⌘ + Enter">
               {t('create.submit')}
             </Button>
           </div>

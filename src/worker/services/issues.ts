@@ -9,7 +9,7 @@ import { activity } from './activity'
 import { limits, parentChecks, usedBytes } from './files'
 import { mentionedUserIds, notify } from './notify'
 import { notesMentioning } from './notes'
-import { access, need, requireActive, userCanSee, visibleProjectIds, type Access, type Project } from './projects'
+import { access, accessColumns, need, requireActive, roleFrom, userCanSee, visibleProjectIds, type Access, type Project } from './projects'
 
 export type Issue = typeof issues.$inferSelect
 export type Status = (typeof ISSUE_STATUSES)[number]
@@ -36,14 +36,17 @@ export async function idempotent<T>(ctx: Ctx, operationId: string | undefined, f
 
 export async function getIssue(ctx: Ctx, ref: string) {
   const { key, number } = parseRef(ref)
-  const { project, role } = await access(ctx, { key })
-  const issue = await ctx.db
-    .select()
-    .from(issues)
-    .where(and(eq(issues.projectId, project.id), eq(issues.number, number), isNull(issues.deletedAt)))
+  // Project, access and the issue in one round trip.
+  const row = await ctx.db
+    .select({ project: projects, issue: issues, ...accessColumns(ctx) })
+    .from(projects)
+    .leftJoin(issues, and(eq(issues.projectId, projects.id), eq(issues.number, number), isNull(issues.deletedAt)))
+    .where(eq(projects.key, key.toUpperCase()))
     .get()
-  if (!issue) throw notFound()
-  return { issue, project, role }
+  if (!row) throw notFound()
+  const role = roleFrom(ctx, row.project, row.myRole, row.memberCount)
+  if (!row.issue) throw notFound()
+  return { issue: row.issue, project: row.project, role }
 }
 
 const refOf = (p: Pick<Project, 'key'>, i: Pick<Issue, 'number'>) => `${p.key}-${i.number}`
@@ -154,7 +157,16 @@ export type IssueFilter = {
 const PRIORITY_RANK = sql`case ${issues.priority} when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 when 'low' then 3 else 4 end`
 
 async function scopeProjects(ctx: Ctx, scope: { key?: string; mine?: boolean }) {
-  return scope.key ? [(await access(ctx, { key: scope.key })).project.id] : visibleProjectIds(ctx)
+  return (await scopeWithKeys(ctx, scope)).ids
+}
+
+/** Project ids in scope, plus their keys when they are already known (one project). */
+async function scopeWithKeys(ctx: Ctx, scope: { key?: string; mine?: boolean }) {
+  if (scope.key) {
+    const { project } = await access(ctx, { key: scope.key })
+    return { ids: [project.id], keys: new Map([[project.id, project.key]]) }
+  }
+  return { ids: await visibleProjectIds(ctx), keys: null }
 }
 
 function issueWhere(ctx: Ctx, projectIds: string[], scope: { mine?: boolean }, f: Omit<IssueFilter, 'offset' | 'limit'>) {
@@ -190,7 +202,7 @@ function issueWhere(ctx: Ctx, projectIds: string[], scope: { mine?: boolean }, f
 
 /** One status at a time, each with its own page — a status group never vanishes because of another's size. */
 export async function listIssues(ctx: Ctx, scope: { key?: string; mine?: boolean }, f: IssueFilter) {
-  const projectIds = await scopeProjects(ctx, scope)
+  const { ids: projectIds, keys } = await scopeWithKeys(ctx, scope)
   if (!projectIds.length) return { items: [], total: 0 }
   const where = issueWhere(ctx, projectIds, scope, f)
   const order: SQL[] =
@@ -203,11 +215,12 @@ export async function listIssues(ctx: Ctx, scope: { key?: string; mine?: boolean
           : f.sort === 'due'
             ? [sql`${issues.dueAt} is null`, asc(issues.dueAt)]
             : [asc(issues.sortOrder)]
-  const [rows, total] = await Promise.all([
+  const [rows, total, keyById] = await Promise.all([
     ctx.db.select().from(issues).where(where).orderBy(...order).limit(f.limit).offset(f.offset).all(),
     ctx.db.select({ n: sql<number>`count(*)` }).from(issues).where(where).get(),
+    keys ?? keyMap(ctx, projectIds),
   ])
-  return { items: await hydrate(ctx, rows, await keyMap(ctx, projectIds)), total: total?.n ?? 0 }
+  return { items: await hydrate(ctx, rows, keyById), total: total?.n ?? 0 }
 }
 
 export const TIMELINE_MAX = 500
@@ -274,25 +287,49 @@ export async function issueTimeline(ctx: Ctx, scope: { key?: string }, f: Omit<I
 }
 
 export async function statusCounts(ctx: Ctx, scope: { key?: string; mine?: boolean }, f: Omit<IssueFilter, 'status' | 'offset' | 'limit'>) {
-  const out: Record<string, number> = {}
-  for (const s of ISSUE_STATUSES) out[s] = (await listIssues(ctx, scope, { ...f, status: s, offset: 0, limit: 0 })).total
+  const out: Record<string, number> = Object.fromEntries(ISSUE_STATUSES.map((s) => [s, 0]))
+  const projectIds = await scopeProjects(ctx, scope)
+  if (!projectIds.length) return out
+  // One grouped query (each status's own doneSince window does not apply to counts).
+  const rows = await ctx.db
+    .select({ status: issues.status, n: sql<number>`count(*)` })
+    .from(issues)
+    .where(issueWhere(ctx, projectIds, scope, { ...f, doneSince: undefined }))
+    .groupBy(issues.status)
+    .all()
+  for (const r of rows) out[r.status] = r.n
   return out
 }
 
 export async function issueDetail(ctx: Ctx, ref: string) {
   const { issue, project, role } = await getIssue(ctx, ref)
-  const [h] = await hydrate(ctx, [issue], new Map([[project.id, project.key]]))
-  const rel = await ctx.db
-    .select({ fromId: issueRelations.fromId, toId: issueRelations.toId, type: issueRelations.type })
-    .from(issueRelations)
-    .where(or(eq(issueRelations.fromId, issue.id), eq(issueRelations.toId, issue.id)))
-    .all()
-  const otherIds = rel.map((r) => (r.fromId === issue.id ? r.toId : r.fromId))
-  const visible = new Set(await visibleProjectIds(ctx))
-  const others = otherIds.length
-    ? await ctx.db.select().from(issues).where(and(inArray(issues.id, otherIds), isNull(issues.deletedAt))).all()
-    : []
-  const keys = await keyMap(ctx, [...new Set(others.map((o) => o.projectId))])
+  const own = new Map([[project.id, project.key]])
+  const issueRef = refOf(project, issue)
+  // Independent reads, all at once: each sequential round trip to D1 costs ~100 ms in production.
+  const [[h], rel, visibleIds, children, mentionedIn, sub] = await Promise.all([
+    hydrate(ctx, [issue], own),
+    ctx.db
+      .select({ fromId: issueRelations.fromId, toId: issueRelations.toId, type: issueRelations.type, other: issues, key: projects.key })
+      .from(issueRelations)
+      .innerJoin(issues, sql`${issues.id} = case when ${issueRelations.fromId} = ${issue.id} then ${issueRelations.toId} else ${issueRelations.fromId} end`)
+      .innerJoin(projects, eq(projects.id, issues.projectId))
+      .where(and(or(eq(issueRelations.fromId, issue.id), eq(issueRelations.toId, issue.id)), isNull(issues.deletedAt)))
+      .all(),
+    visibleProjectIds(ctx),
+    ctx.db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.parentId, issue.id), isNull(issues.deletedAt)))
+      .orderBy(asc(issues.sortOrder))
+      .all()
+      .then((rows) => hydrate(ctx, rows, own)),
+    // Meeting notes are matched on their stored text; comments use the references table.
+    notesMentioning(ctx, `#[issue:${issueRef}]`),
+    ctx.db.select().from(issueSubscriptions).where(and(eq(issueSubscriptions.issueId, issue.id), eq(issueSubscriptions.userId, ctx.user.id))).get(),
+  ])
+  const visible = new Set(visibleIds)
+  const others = rel.map((r) => r.other)
+  const keys = new Map(rel.map((r) => [r.other.projectId, r.key]))
   const relations = rel
     .map((r) => {
       const outgoing = r.fromId === issue.id
@@ -302,16 +339,11 @@ export async function issueDetail(ctx: Ctx, ref: string) {
       return { type, ref: `${keys.get(o.projectId)}-${o.number}`, title: o.title, status: o.status }
     })
     .filter(Boolean)
-  const children = await ctx.db.select().from(issues).where(and(eq(issues.parentId, issue.id), isNull(issues.deletedAt))).orderBy(asc(issues.sortOrder)).all()
-  // Meeting notes are matched on their stored text; comments use the references table.
-  const issueRef = refOf(project, issue)
-  const mentionedIn = await notesMentioning(ctx, `#[issue:${issueRef}]`)
-  const sub = await ctx.db.select().from(issueSubscriptions).where(and(eq(issueSubscriptions.issueId, issue.id), eq(issueSubscriptions.userId, ctx.user.id))).get()
   return {
     subscribed: !!sub,
     issue: { ...h!, role, projectState: project.state, projectName: project.name },
     relations,
-    children: (await hydrate(ctx, children, new Map([[project.id, project.key]]))).map(({ ref, title, status, assigneeIds }) => ({ ref, title, status, assigneeIds })),
+    children: children.map(({ ref, title, status, assigneeIds }) => ({ ref, title, status, assigneeIds })),
     mentionedIn,
   }
 }

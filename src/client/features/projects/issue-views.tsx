@@ -37,25 +37,55 @@ const qs = (f: Filters & Record<string, unknown>) =>
 const shown = (f: Filters) => (f.statuses ? STATUSES.filter((s) => f.statuses!.split(',').includes(s)) : STATUSES)
 const FOURTEEN_DAYS = 14 * 86400_000
 
+const countsOptions = (scope: Scope, f: Filters) => ({
+  queryKey: ['counts', scope, f],
+  queryFn: () => api<Record<Status, number>>(`${scope.key || scope.mine ? `${base(scope)}/counts` : '/api/issues-counts'}?${qs(f)}`),
+})
+
+const statusOptions = (scope: Scope, f: Filters, status: Status, doneSince?: number) => ({
+  queryKey: ['issues', scope, f, status, doneSince ?? 0],
+  queryFn: ({ pageParam }: { pageParam: number }) => api<{ items: IssueRow[]; total: number }>(`${base(scope)}${scope.key ? '/issues' : ''}?${qs({ ...f, status, offset: pageParam, limit: PAGE, doneSince })}`),
+  initialPageParam: 0,
+  getNextPageParam: (last: { items: IssueRow[]; total: number }, all: { items: IssueRow[] }[]) => {
+    const n = all.reduce((s, p) => s + p.items.length, 0)
+    return n < last.total ? n : undefined
+  },
+})
+
 export function useCounts(scope: Scope, f: Filters) {
-  return useQuery({
-    queryKey: ['counts', scope, f],
-    queryFn: () => api<Record<Status, number>>(`${scope.key || scope.mine ? `${base(scope)}/counts` : '/api/issues-counts'}?${qs(f)}`),
-  })
+  return useQuery(countsOptions(scope, f))
 }
 
 /** One status, its own pages. Shared by list groups and board columns (same cache key). */
 export function useStatusIssues(scope: Scope, f: Filters, status: Status, enabled: boolean, doneSince?: number) {
-  return useInfiniteQuery({
-    queryKey: ['issues', scope, f, status, doneSince ?? 0],
-    queryFn: ({ pageParam }) => api<{ items: IssueRow[]; total: number }>(`${base(scope)}${scope.key ? '/issues' : ''}?${qs({ ...f, status, offset: pageParam, limit: PAGE, doneSince })}`),
-    initialPageParam: 0,
-    getNextPageParam: (last, all) => {
-      const n = all.reduce((s, p) => s + p.items.length, 0)
-      return n < last.total ? n : undefined
+  return useInfiniteQuery({ ...statusOptions(scope, f, status, doneSince), enabled })
+}
+
+/**
+ * Starts the counts and the open statuses' first pages right away, so a page that is still loading
+ * its header (the project) doesn't make the list wait behind it.
+ */
+export function prefetchIssues(scope: Scope, f: Filters) {
+  void queryClient.prefetchQuery(countsOptions(scope, f))
+  for (const s of shown(f)) if (!isDone(s)) void queryClient.prefetchInfiniteQuery(statusOptions(scope, f, s))
+}
+
+/** Loads an issue page in the background (hover), so opening it shows everything at once. */
+export function prefetchIssue(ref: string) {
+  void queryClient.prefetchQuery({ queryKey: ['issue', ref], queryFn: () => api(`/api/issues/${ref}`), staleTime: 15_000 })
+}
+
+/** Hover for a moment (not just passing over) before prefetching. */
+function useHoverPrefetch(ref: string) {
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  return {
+    onPointerEnter: () => {
+      clearTimeout(timer.current)
+      timer.current = setTimeout(() => prefetchIssue(ref), 120)
     },
-    enabled,
-  })
+    onPointerLeave: () => clearTimeout(timer.current),
+  }
 }
 
 type Ctx = {
@@ -358,6 +388,7 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
   const navigate = useNavigate()
   const active = v.cursor === issue.ref
   const checked = v.checked.has(issue.ref)
+  const hover = useHoverPrefetch(issue.ref)
   const open = () => {
     rememberNav(v.all().map((x) => x.ref), location.pathname + location.search)
     navigate({ to: `/projects/${issue.projectKey}/${issue.ref}` })
@@ -366,6 +397,7 @@ const IssueRowView = memo(function IssueRowView({ issue }: { issue: IssueRow }) 
     <IssueContextMenu issue={issue}>
       <li
         data-ref={issue.ref}
+        {...hover}
         onMouseEnter={() => v.setCursor(issue.ref)}
         onClick={(e) => {
           if (e.shiftKey || e.metaKey || e.ctrlKey) v.toggleChecked(issue.ref)
@@ -896,6 +928,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
   const navigate = useNavigate()
   const [dragging, setDragging] = useState(false)
   const el = useRef<HTMLDivElement>(null)
+  const hover = useHoverPrefetch(issue.ref)
   // Touch: hold 450 ms without moving to pick the card up, then slide it onto a column.
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number; active: boolean; over: HTMLElement | null } | null>(null)
   useEffect(() => {
@@ -931,6 +964,7 @@ function Card({ issue, draggable }: { issue: IssueRow; draggable: boolean }) {
     <IssueContextMenu issue={issue}>
       <div
         ref={el}
+        {...hover}
         data-ref={issue.ref}
         draggable={draggable}
         onPointerDown={(e) => {

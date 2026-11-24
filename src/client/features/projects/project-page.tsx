@@ -9,7 +9,7 @@ import { Input, Select } from '../../ui/field'
 import { Badge, EmptyState, Skeleton } from '../../ui/misc'
 import { Segmented } from '../../ui/tabs'
 import { openCreateIssue } from './create-issue'
-import { IssueBoard, IssueList, ViewProvider, type Filters } from './issue-views'
+import { IssueBoard, IssueList, ViewProvider, prefetchIssues, type Filters } from './issue-views'
 import { PRIORITIES, STATUSES, canWrite, treeOrder, useLabels, useProject, useProjects, type ProjectDetail } from './model'
 import { useAssigneeOptions } from './pickers'
 import { NewProjectDialog, ProjectContextMenu, VisibilityBadge, openNewProject } from './projects-layout'
@@ -265,6 +265,9 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
   const { t } = useI18n()
   const q = useProject(projectKey)
   const labels = useLabels(projectKey)
+  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, labelId: search.labelId, q: search.q, sort: search.sort, due: search.due, blocking: search.blocking, statuses: search.statuses }
+  // The list's own requests start now, alongside the project's, instead of after it.
+  if (q.isPending && search.view !== 'timeline' && search.view !== 'stats') prefetchIssues({ key: projectKey }, filters)
   if (q.isPending)
     return (
       <div className="flex flex-col gap-3 p-6">
@@ -274,7 +277,6 @@ export function ProjectPage({ projectKey, search, setSearch }: { projectKey: str
     )
   if (q.isError) throw q.error
   const p = q.data
-  const filters: Filters = { assigneeId: search.assigneeId, priority: search.priority, labelId: search.labelId, q: search.q, sort: search.sort, due: search.due, blocking: search.blocking, statuses: search.statuses }
   const filtered = !!(search.assigneeId || search.priority || search.labelId || search.q || search.due || search.blocking || search.statuses)
   const writable = canWrite(p.role) && p.state === 'active'
   return (

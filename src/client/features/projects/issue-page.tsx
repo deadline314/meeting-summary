@@ -1,10 +1,10 @@
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, BellOff, BellRing, CalendarDays, ChevronLeft, ChevronRight, CircleSlash, Copy, CopyPlus, Download, FileText, FolderKanban, HardDrive, Link2, OctagonAlert, Paperclip, Pencil, Plus, RefreshCw, Reply, Trash2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useActions } from '../../lib/actions'
-import { ApiError, api } from '../../lib/api'
+import { ApiError, api, queryClient } from '../../lib/api'
 import { useIsMobile } from '../../lib/hooks'
 import { useI18n, type MsgKey } from '../../lib/i18n'
 import { renderMarkdown } from '../../lib/markdown'
@@ -30,7 +30,7 @@ import { openDuplicate } from './duplicate-issue'
 import { offerCloseDuplicate } from './relate'
 import { StaleBadge } from './issue-views'
 import { IssueStatusIcon, PriorityIcon } from './icons'
-import { canWrite, confirmBlocked, invalidateIssues, isDone, readNav, rememberLast, useLabels, useProject, type IssuePatch, type IssueRow, type Status } from './model'
+import { canWrite, confirmBlocked, invalidateIssues, isDone, readNav, rememberLast, useLabels, useProject, type IssuePatch, type IssueRow, type ProjectDetail, type Status } from './model'
 import { AssigneeIcon, LabelChip, LabelIcon, OptionPicker, labelOptions, useAssigneeOptions, usePriorityOptions, useStatusOptions } from './pickers'
 
 type Detail = {
@@ -41,8 +41,34 @@ type Detail = {
   mentionedIn: { id: string; title: string; startsAt: number }[]
 }
 
+/**
+ * What the lists already know about an issue, shaped like the detail, so the page shows at once;
+ * relations, sub-issues and mentions fill in when the detail arrives.
+ */
+function fromLists(ref: string, projectKey: string): Detail | undefined {
+  for (const [, data] of queryClient.getQueriesData<InfiniteData<{ items: IssueRow[] }>>({ queryKey: ['issues'] })) {
+    const row = data?.pages.flatMap((p) => p.items).find((r) => r.ref === ref)
+    if (!row) continue
+    const project = queryClient.getQueryData<ProjectDetail>(['project', projectKey])
+    return {
+      subscribed: false,
+      // Until the detail confirms the role, nothing is editable.
+      issue: { ...row, role: project?.role ?? 'viewer', projectState: project?.state ?? 'active', projectName: project?.name ?? '' },
+      relations: [],
+      children: [],
+      mentionedIn: [],
+    }
+  }
+  return undefined
+}
+
 export function IssuePage({ projectKey, issueRef }: { projectKey: string; issueRef: string }) {
-  const q = useQuery({ queryKey: ['issue', issueRef], queryFn: () => api<Detail>(`/api/issues/${issueRef}`), refetchInterval: 20_000 })
+  const q = useQuery({
+    queryKey: ['issue', issueRef],
+    queryFn: () => api<Detail>(`/api/issues/${issueRef}`),
+    refetchInterval: 20_000,
+    placeholderData: () => fromLists(issueRef, projectKey),
+  })
   // Remember it right away (even before it loads) so going back selects it in the list.
   useEffect(() => rememberLast(issueRef), [issueRef])
   if (q.isPending)
@@ -85,12 +111,21 @@ function IssueView({ d, projectKey, issueRef }: { d: Detail; projectKey: string;
   const conflict = base !== null && i.version > base
   const save = async (patch: IssuePatch) => {
     if (!(await confirmBlocked([i], patch.status, t))) return
+    // Show the change at once; the server's answer confirms it (or puts it back). Base it on what
+    // is on screen (the detail may still be loading) and stop that load from landing on top of it.
+    await qc.cancelQueries({ queryKey: ['issue', i.ref] })
+    const before = qc.getQueryData<Detail>(['issue', i.ref])
+    const shown: Partial<IssueRow> = { ...(patch as Partial<IssueRow>) }
+    if (patch.labelIds) shown.labels = (labels.data ?? []).filter((l) => patch.labelIds!.includes(l.id))
+    const current = before ?? d
+    qc.setQueryData<Detail>(['issue', i.ref], { ...current, issue: { ...current.issue, ...shown } })
     try {
       const r = await api<{ issue: IssueRow }>(`/api/issues/${i.ref}`, { method: 'PATCH', body: { version: i.version, ...patch } })
       setBase(r.issue.version)
-      qc.setQueryData<Detail>(['issue', i.ref], (old) => (old ? { ...old, issue: { ...old.issue, ...r.issue, ...patch, version: r.issue.version } } : old))
+      qc.setQueryData<Detail>(['issue', i.ref], (old) => (old ? { ...old, issue: { ...old.issue, version: r.issue.version, updatedAt: r.issue.updatedAt } } : old))
       invalidateIssues()
     } catch (err) {
+      qc.setQueryData(['issue', i.ref], before ?? d)
       if (err instanceof ApiError && err.code === 'conflict') toast(t('error.conflict'), 'error')
       else toastError(err)
       qc.invalidateQueries({ queryKey: ['issue', i.ref] }).then(() => setBase(qc.getQueryData<Detail>(['issue', i.ref])?.issue.version ?? null))

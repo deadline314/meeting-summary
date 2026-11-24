@@ -28,28 +28,30 @@ export async function visibleProjectIds(ctx: Pick<Ctx, 'db' | 'user' | 'apiKey'>
   return limit ? ids.filter((id) => limit.includes(id)) : ids
 }
 
-async function memberRole(ctx: Ctx, projectId: string) {
-  const m = await ctx.db
-    .select({ role: projectMembers.role })
-    .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, ctx.user.id)))
-    .get()
-  return m?.role ?? null
+/** Loads a project with the caller's access, or 404 (never reveals existence). */
+/** Columns that let one query return the caller's membership and the member count with a project. */
+export const accessColumns = (ctx: Pick<Ctx, 'user'>) => ({
+  myRole: sql<ProjectRole | null>`(select m.role from project_members m where m.project_id = ${projects.id} and m.user_id = ${ctx.user.id})`,
+  memberCount: sql<number>`(select count(*) from project_members m2 where m2.project_id = ${projects.id})`,
+})
+
+/** The caller's role from a row selected with `accessColumns`, or 404 (never reveals existence). */
+export function roleFrom(ctx: Ctx, p: Project, myRole: ProjectRole | null, members: number): Access {
+  if (ctx.apiKey?.projectIds && !ctx.apiKey.projectIds.includes(p.id)) throw notFound()
+  if (myRole) return myRole
+  if (isAdmin(ctx.user) && !p.hiddenFromAdmins && members >= 2) return 'admin'
+  throw notFound()
 }
 
-/** Loads a project with the caller's access, or 404 (never reveals existence). */
 export async function access(ctx: Ctx, by: { key?: string; id?: string }): Promise<{ project: Project; role: Access }> {
-  const p = await ctx.db
-    .select()
+  // One round trip: the project, my membership and the member count (for the admin rule).
+  const row = await ctx.db
+    .select({ project: projects, ...accessColumns(ctx) })
     .from(projects)
     .where(by.key ? eq(projects.key, by.key.toUpperCase()) : eq(projects.id, by.id!))
     .get()
-  if (!p) throw notFound()
-  if (ctx.apiKey?.projectIds && !ctx.apiKey.projectIds.includes(p.id)) throw notFound()
-  const role = await memberRole(ctx, p.id)
-  if (role) return { project: p, role }
-  if (isAdmin(ctx.user) && !p.hiddenFromAdmins && (await memberCount(ctx, p.id)) >= 2) return { project: p, role: 'admin' }
-  throw notFound()
+  if (!row) throw notFound()
+  return { project: row.project, role: roleFrom(ctx, row.project, row.myRole, row.memberCount) }
 }
 
 const RANK: Record<Access, number> = { viewer: 0, member: 1, owner: 2, admin: 2 }
@@ -70,16 +72,21 @@ async function memberCount(ctx: Ctx, projectId: string) {
 }
 
 export async function projectDto(ctx: Ctx, p: Project, role: Access) {
-  const members = await ctx.db
-    .select({ userId: projectMembers.userId, role: projectMembers.role })
-    .from(projectMembers)
-    .where(eq(projectMembers.projectId, p.id))
-    .orderBy(asc(projectMembers.createdAt))
-    .all()
   // Breadcrumb and sub-projects: only the ones the caller can see (permissions are not inherited).
-  const visible = new Set(await visibleProjectIds(ctx))
-  const up = (await chainUp(ctx, p.parentId)).filter((x) => visible.has(x.id)).reverse()
-  const kids = (await ctx.db.select().from(projects).where(eq(projects.parentId, p.id)).orderBy(asc(projects.key)).all()).filter((x) => visible.has(x.id))
+  const [members, visibleIds, chain, allKids] = await Promise.all([
+    ctx.db
+      .select({ userId: projectMembers.userId, role: projectMembers.role })
+      .from(projectMembers)
+      .where(eq(projectMembers.projectId, p.id))
+      .orderBy(asc(projectMembers.createdAt))
+      .all(),
+    visibleProjectIds(ctx),
+    chainUp(ctx, p.parentId),
+    ctx.db.select().from(projects).where(eq(projects.parentId, p.id)).orderBy(asc(projects.key)).all(),
+  ])
+  const visible = new Set(visibleIds)
+  const up = chain.filter((x) => visible.has(x.id)).reverse()
+  const kids = allKids.filter((x) => visible.has(x.id))
   const kidIds = kids.map((k) => k.id)
   const [counts, kidMembers] = kidIds.length
     ? await Promise.all([
@@ -121,6 +128,7 @@ async function chainUp(ctx: Pick<Ctx, 'db'>, id: string | null) {
       union all select p.parent_id, up.depth + 1 from projects p join up on p.id = up.id where p.parent_id is not null and up.depth < 20
     )
     select id, depth from up`)
+  if (!rows.length) return []
   const found = await ctx.db.select().from(projects).where(inArray(projects.id, rows.map((r) => r.id))).all()
   return rows.map((r) => found.find((f) => f.id === r.id)).filter((x): x is Project => !!x)
 }
@@ -202,14 +210,16 @@ export async function createProject(
 export async function listProjects(ctx: Ctx) {
   const ids = await visibleProjectIds(ctx)
   if (!ids.length) return []
-  const rows = await ctx.db.select().from(projects).where(inArray(projects.id, ids)).orderBy(asc(projects.key)).all()
-  const members = await ctx.db.select().from(projectMembers).where(inArray(projectMembers.projectId, ids)).all()
-  const open = await ctx.db
-    .select({ projectId: issues.projectId, n: sql<number>`count(*)` })
-    .from(issues)
-    .where(and(inArray(issues.projectId, ids), sql`${issues.status} not in ('done','canceled')`, sql`${issues.deletedAt} is null`))
-    .groupBy(issues.projectId)
-    .all()
+  const [rows, members, open] = await Promise.all([
+    ctx.db.select().from(projects).where(inArray(projects.id, ids)).orderBy(asc(projects.key)).all(),
+    ctx.db.select().from(projectMembers).where(inArray(projectMembers.projectId, ids)).all(),
+    ctx.db
+      .select({ projectId: issues.projectId, n: sql<number>`count(*)` })
+      .from(issues)
+      .where(and(inArray(issues.projectId, ids), sql`${issues.status} not in ('done','canceled')`, sql`${issues.deletedAt} is null`))
+      .groupBy(issues.projectId)
+      .all(),
+  ])
   const openBy = new Map(open.map((o) => [o.projectId, o.n]))
   return rows.map((p) => {
     const ms = members.filter((m) => m.projectId === p.id)

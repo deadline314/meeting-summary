@@ -1041,4 +1041,6 @@ export const zh = {
   'email.subject': "{site}：{n} 則未讀通知",
   'email.intro': "你有 {n} 則還沒看的通知：",
   'email.manage': "管理通知設定",
+  'create.open': "開啟",
+  'create.reopen': "重新開啟草稿",
 } as const

@@ -1042,4 +1042,6 @@ export const en: Record<keyof typeof zh, string> = {
   'email.subject': "{site}: {n} unread notifications",
   'email.intro': "You have {n} unread notifications:",
   'email.manage': "Manage notification settings",
+  'create.open': "Open",
+  'create.reopen': "Reopen draft",
 }
